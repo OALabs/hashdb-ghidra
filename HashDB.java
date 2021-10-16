@@ -142,9 +142,8 @@ public class HashDB extends GhidraScript {
 	}
 
 	public void run() throws Exception {
-		// long hash = getSelectedHash();
 		HashDBApi api = new HashDBApi();
-		long hash = 2715048308L;
+		long hash = 2715048308L; // getSelectedHash();		
 		long[] hashes = { hash };
 		ArrayList<String> algorithms = api.hunt(hashes);
 		if (algorithms.size() == 1) {
