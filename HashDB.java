@@ -6,33 +6,14 @@
 //@toolbar 
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.File;
-import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
-import ghidra.net.ApplicationKeyManagerFactory;
-import ghidra.net.http.HttpUtil;
 import ghidra.app.decompiler.DecompilerLocation;
 import ghidra.app.script.GhidraScript;
-import ghidra.program.model.util.*;
 import ghidra.program.util.EquateOperandFieldLocation;
 import ghidra.program.util.OperandFieldLocation;
-import ghidra.program.model.reloc.*;
-import ghidra.program.model.data.*;
-import ghidra.program.model.block.*;
-import ghidra.program.model.symbol.*;
-import ghidra.program.model.scalar.*;
-import ghidra.program.model.mem.*;
-import ghidra.program.model.listing.*;
-import ghidra.program.model.lang.*;
-import ghidra.program.model.pcode.*;
-import ghidra.program.model.address.*;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -40,16 +21,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import ghidra.app.script.GhidraScript;
 import ghidra.program.model.data.CategoryPath;
+import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
 
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.ProtocolException;
 import java.net.URL;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -70,7 +46,7 @@ public class HashDB extends GhidraScript {
 		private ArrayList<String> hunt(long[] hashes) throws Exception {
 			ArrayList<String> ret = new ArrayList<String>();
 			JsonObject response = JsonParser
-					.parseString(httpQuery("POST", "/hunt", new Gson().toJson(new Hashes(hashes)).getBytes()))
+					.parseString(httpQuery("POST", "hunt", new Gson().toJson(new Hashes(hashes)).getBytes()))
 					.getAsJsonObject();
 			for (JsonElement hit : response.get("hits").getAsJsonArray()) {
 				ret.add(hit.getAsJsonObject().get("algorithm").getAsString());
@@ -127,7 +103,7 @@ public class HashDB extends GhidraScript {
 
 		private ArrayList<HashInfo> module(String module, String algorithm, String permutation) throws Exception {
 			return parseHashInfoFromJson(
-					httpQuery("GET", String.format("/module/%s/%s/%s", module, algorithm, permutation)));
+					httpQuery("GET", String.format("module/%s/%s/%s", module, algorithm, permutation)));
 		}
 
 		private String httpQuery(String method, String endpoint) throws Exception {
