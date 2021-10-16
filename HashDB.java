@@ -36,6 +36,7 @@ public class HashDB extends GhidraScript {
 		private String baseUrl = "https://hashdb.openanalysis.net";
 
 		private class Hashes {
+			@SuppressWarnings({ "unused" })
 			public long[] hashes;
 
 			public Hashes(long[] hashes) {
