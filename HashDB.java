@@ -22,7 +22,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import ghidra.program.model.data.CategoryPath;
+import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
 
 import java.net.URL;
@@ -112,7 +115,9 @@ public class HashDB extends GhidraScript {
 		}
 
 		private String httpQuery(String method, String endpoint, byte[] postData) throws Exception {
-			URL url = new URL(String.format("%s/%s", baseUrl, endpoint));
+			String urlString = String.format("%s/%s", baseUrl, endpoint);
+			println(String.format("[HashDB] %s %s", method, urlString));
+			URL url = new URL(urlString);
 			SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
 			sslContext.init(null, null, new SecureRandom());
 			HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
@@ -136,6 +141,7 @@ public class HashDB extends GhidraScript {
 				while ((responseLine = br.readLine()) != null) {
 					response.append(responseLine.trim());
 				}
+				println(String.format("[HashDB] HTTP Response: %s", response));				
 				return response.toString();
 			}
 		}
@@ -144,57 +150,80 @@ public class HashDB extends GhidraScript {
 
 	public void run() throws Exception {
 		HashDBApi api = new HashDBApi();
-		long hash = 2715048308L; // getSelectedHash();		
+		long hash;
+		try {
+			hash = getSelectedHash();
+		} catch (Exception e) {
+			println(String.format("[HashDB] Move your coursor! %s", e.getMessage()));
+			return;
+		}
+		println(String.format("[HashDB] Querying hash 0x%08x", hash));
 		long[] hashes = { hash };
 		ArrayList<String> algorithms = api.hunt(hashes);
-		if (algorithms.size() == 1) {
+		if (algorithms.size() == 0) {
+			println(String.format("[HashDB] Could not identify any hashing algorithms"));
+		}
+		else if (algorithms.size() == 1) {
 			String algorithm = algorithms.iterator().next();
 			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
 			if (resolved.size() == 0) {
-				println("No resolution found");
+				println("[HashDB] No resolution found");
 				return;
 			} else if (resolved.size() > 1) {
-				println("Hash collision, using first value");
+				println("[HashDB] Hash collision, using first value");
 			}
 			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
 			if (inputHashInfo.modules.length == 0) {
-				println("No module found");
+				println("[HashDB] No module found");
 				return;
 			}
-			CategoryPath categoryPath = new CategoryPath("/HashDB");
-			EnumDataType hashEnumeration = new EnumDataType(categoryPath, "ApiHashes", 4);
-
+			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
+			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", "ApiHashes"));
+			EnumDataType hashEnumeration;
+			if (existingDataType == null) {
+				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), "ApiHashes", 4);
+			} else {
+				hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
+			}
+			int cnt = 0;
 			for (String module : inputHashInfo.modules) {
 				for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
 					try {
 						hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
+						cnt++;
 					} catch (IllegalArgumentException e) {
 					}
 				}
 			}
 
-			getCurrentProgram().getDataTypeManager().addDataType(hashEnumeration, null);
-			currentProgram.getDataTypeManager().addDataType(hashEnumeration, null);
+			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
+			println(String.format("[HashDB] Added %d enum values to %s! \\o/", cnt, "ApiHashes"));
 
 		} else {
-			println("Not implemented yet");
+			println("[HashDB] Not implemented yet");
 		}
 	}
 
-	private long getSelectedHash() {
+	private long getSelectedHash() throws Exception {
+		String s;
+		int b = 10;
 		if (currentLocation instanceof DecompilerLocation) {
-			return Long.parseLong(((DecompilerLocation) currentLocation).getToken().getText(), 10);
+			s = ((DecompilerLocation) currentLocation).getToken().getText();
 		} else if (currentLocation instanceof EquateOperandFieldLocation) {
-			return Long.parseLong(((EquateOperandFieldLocation) currentLocation).getOperandRepresentation(), 10);
+			s = ((EquateOperandFieldLocation) currentLocation).getOperandRepresentation();
 		} else if (currentLocation instanceof OperandFieldLocation) {
-			String s = ((OperandFieldLocation) currentLocation).getOperandRepresentation();
-			if (s.endsWith("h")) {
-				s = s.substring(0, s.length() - 1);
-			}
-			return Long.parseLong(s, 16);
+			s = ((OperandFieldLocation) currentLocation).getOperandRepresentation();
 		} else {
-			println(String.format("Cannot handle selection: %s", currentLocation.toString()));
+			throw new Exception(String.format("[HashDB] Cannot handle selection: %s", currentLocation.toString()));
 		}
-		return 0;
+		if (s.endsWith("h")) {
+			s = s.substring(0, s.length() - 1);
+			b = 16;
+		}
+		if (s.startsWith("0x")) {
+			s = s.substring(2, s.length());
+			b = 16;
+		}
+		return Long.parseLong(s, b);
 	}
 }
