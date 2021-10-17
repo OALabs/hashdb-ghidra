@@ -12,6 +12,7 @@ import java.util.ArrayList;
 
 import ghidra.app.decompiler.DecompilerLocation;
 import ghidra.app.script.GhidraScript;
+import ghidra.program.util.AddressFieldLocation;
 import ghidra.program.util.EquateOperandFieldLocation;
 import ghidra.program.util.OperandFieldLocation;
 
@@ -21,12 +22,20 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import ghidra.program.model.address.Address;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.lang.Register;
+import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.Varnode;
+import ghidra.program.model.scalar.Scalar;
+import ghidra.program.model.symbol.Reference;
 
 import java.net.URL;
 import java.security.SecureRandom;
@@ -141,7 +150,7 @@ public class HashDB extends GhidraScript {
 				while ((responseLine = br.readLine()) != null) {
 					response.append(responseLine.trim());
 				}
-				println(String.format("[HashDB] HTTP Response: %s", response));				
+				println(String.format("[HashDB] HTTP Response: %s", response));
 				return response.toString();
 			}
 		}
@@ -154,7 +163,7 @@ public class HashDB extends GhidraScript {
 		try {
 			hash = getSelectedHash();
 		} catch (Exception e) {
-			println(String.format("[HashDB] Move your coursor! %s", e.getMessage()));
+			println(String.format("[HashDB] Error: %s", e.getMessage()));
 			return;
 		}
 		println(String.format("[HashDB] Querying hash 0x%08x", hash));
@@ -162,8 +171,7 @@ public class HashDB extends GhidraScript {
 		ArrayList<String> algorithms = api.hunt(hashes);
 		if (algorithms.size() == 0) {
 			println(String.format("[HashDB] Could not identify any hashing algorithms"));
-		}
-		else if (algorithms.size() == 1) {
+		} else if (algorithms.size() == 1) {
 			String algorithm = algorithms.iterator().next();
 			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
 			if (resolved.size() == 0) {
@@ -205,25 +213,30 @@ public class HashDB extends GhidraScript {
 	}
 
 	private long getSelectedHash() throws Exception {
-		String s;
-		int b = 10;
+		// First try to read the value of defined or undefined data. This covers many
+		// different types of locations where the cursor could be in the data view.
+		Data data = currentProgram.getListing().getDataAt(currentLocation.getAddress());
+		if (data != null)
+			return data.getBigInteger(0, data.getDataType().getLength(), false).longValue();
 		if (currentLocation instanceof DecompilerLocation) {
-			s = ((DecompilerLocation) currentLocation).getToken().getText();
-		} else if (currentLocation instanceof EquateOperandFieldLocation) {
-			s = ((EquateOperandFieldLocation) currentLocation).getOperandRepresentation();
+			Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
+			if (varNode == null || !varNode.isConstant())
+				throw new Exception("You have to select a constant.");
+			return varNode.getOffset();
 		} else if (currentLocation instanceof OperandFieldLocation) {
-			s = ((OperandFieldLocation) currentLocation).getOperandRepresentation();
+			OperandFieldLocation opLoc = (OperandFieldLocation) currentLocation;
+			Address opAddress = opLoc.getAddress();
+			Instruction instruction = currentProgram.getListing().getInstructionAt(opAddress);
+			if (instruction == null)
+				throw new Exception("Operand selected, but no instruction or data found.");
+			Object[] args = instruction.getOpObjects(opLoc.getOperandIndex());
+			int index = opLoc.getSubOperandIndex();
+			if (index < args.length && args[index] instanceof Scalar)
+				return ((Scalar) args[index]).getUnsignedValue();
+			throw new Exception("The selection is not a scalar value.");
 		} else {
-			throw new Exception(String.format("[HashDB] Cannot handle selection: %s", currentLocation.toString()));
+			throw new Exception(String.format("Don't know how to handle program location of type %s",
+					currentLocation.getClass().getSimpleName()));
 		}
-		if (s.endsWith("h")) {
-			s = s.substring(0, s.length() - 1);
-			b = 16;
-		}
-		if (s.startsWith("0x")) {
-			s = s.substring(2, s.length());
-			b = 16;
-		}
-		return Long.parseLong(s, b);
 	}
 }
