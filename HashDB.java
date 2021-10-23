@@ -5,13 +5,28 @@
 //@menupath 
 //@toolbar 
 
+import java.awt.BorderLayout;
+import java.awt.GridLayout;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.List;
 
 import ghidra.app.decompiler.DecompilerLocation;
+import ghidra.app.nav.Navigatable;
+import ghidra.app.plugin.core.instructionsearch.InstructionSearchPlugin;
+import ghidra.app.plugin.core.instructionsearch.ui.InstructionSearchDialog;
+import ghidra.app.plugin.core.instructionsearch.util.InstructionSearchUtils;
+import ghidra.app.plugin.core.string.StringTablePlugin;
 import ghidra.app.script.GhidraScript;
+import ghidra.app.tablechooser.AddressableRowObject;
+import ghidra.app.tablechooser.ColumnDisplay;
+import ghidra.app.tablechooser.StringColumnDisplay;
+import ghidra.app.tablechooser.TableChooserDialog;
+import ghidra.app.tablechooser.TableChooserExecutor;
+import ghidra.framework.plugintool.Plugin;
+import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.util.AddressFieldLocation;
 import ghidra.program.util.EquateOperandFieldLocation;
 import ghidra.program.util.OperandFieldLocation;
@@ -22,6 +37,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import docking.widgets.DropDownTextField;
+import docking.widgets.label.GDLabel;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
@@ -32,6 +49,7 @@ import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Program;
 import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
@@ -42,6 +60,12 @@ import java.security.SecureRandom;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
 
 public class HashDB extends GhidraScript {
 	private class HashDBApi {
@@ -154,7 +178,74 @@ public class HashDB extends GhidraScript {
 				return response.toString();
 			}
 		}
+	}
 
+	private class HashTableExecutor implements TableChooserExecutor {
+		public HashTableExecutor() {
+
+		}
+
+		@Override
+		public String getButtonName() {
+			return "Query!";
+		}
+
+		@Override
+		public boolean execute(AddressableRowObject rowObject) {
+			HashLocation column = (HashLocation) rowObject;
+
+			println(String.format("%s", column.getHashValue()));
+			return false;
+		}
+
+	}
+
+	class HashTable extends TableChooserDialog {
+		private JTextField enumNameTextField;
+		private JTextField transformationTextField;
+
+		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
+			super(tool, executor, program, title, null, false);
+		}
+
+		public String getTransformation() {
+			return transformationTextField.getText();
+		}
+
+		public String getEnumName() {
+			return enumNameTextField.getText();
+		}
+
+		protected void addWorkPanel(JComponent hauptPanele) {
+			super.addWorkPanel(hauptPanele);
+
+			JPanel outerPanel = new JPanel(new BorderLayout(10, 10));
+			JPanel leftPanel = new JPanel(new GridLayout(2, 1));
+			JPanel rightPanel = new JPanel(new GridLayout(2, 1));
+			outerPanel.add(leftPanel, BorderLayout.WEST);
+			outerPanel.add(rightPanel, BorderLayout.CENTER);
+			leftPanel.add(new GDLabel("Enum Name:"));
+			enumNameTextField = new JTextField("HashDBEnum");
+			rightPanel.add(enumNameTextField);
+
+			leftPanel.add(new GDLabel("Hash Transformation:"));
+			transformationTextField = new JTextField("(((X ^ 0x76c7) << 0x10 ^ X) ^ 0xafb9) & 0x1fffff");
+			rightPanel.add(transformationTextField);
+
+			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
+		}
+	}
+
+	static HashTable dialog = null;
+
+	private void showDialog(long hash) {
+		if (dialog == null || !dialog.isVisible()) {
+			println("Creating new Dialog!");
+			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
+			configureTableColumns(dialog);
+		}
+		state.getTool().showDialog(dialog);
+		dialog.add(new HashLocation(currentProgram, currentAddress, hash));
 	}
 
 	public void run() throws Exception {
@@ -166,8 +257,11 @@ public class HashDB extends GhidraScript {
 			println(String.format("[HashDB] Error: %s", e.getMessage()));
 			return;
 		}
+		// showDialog(hash);
+
 		println(String.format("[HashDB] Querying hash 0x%08x", hash));
 		long[] hashes = { hash };
+
 		ArrayList<String> algorithms = api.hunt(hashes);
 		if (algorithms.size() == 0) {
 			println(String.format("[HashDB] Could not identify any hashing algorithms"));
@@ -186,10 +280,11 @@ public class HashDB extends GhidraScript {
 				return;
 			}
 			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
-			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", "ApiHashes"));
+
+			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
 			EnumDataType hashEnumeration;
 			if (existingDataType == null) {
-				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), "ApiHashes", 4);
+				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), dialog.getEnumName(), 4);
 			} else {
 				hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
 			}
@@ -209,6 +304,59 @@ public class HashDB extends GhidraScript {
 
 		} else {
 			println("[HashDB] Not implemented yet");
+		}
+	}
+
+	private long transformHash(long hash, String transformation) throws ScriptException {
+		ScriptEngineManager manager = new ScriptEngineManager();
+		manager.put("X", hash);
+		ScriptEngine engine = manager.getEngineByName("js");
+		return (long) engine.eval(transformation);
+	}
+
+	private void configureTableColumns(TableChooserDialog dialog) {
+		StringColumnDisplay hashColumn = new StringColumnDisplay() {
+			@Override
+			public String getColumnName() {
+				return "Hash";
+			}
+
+			@Override
+			public String getColumnValue(AddressableRowObject rowObject) {
+				HashLocation column = (HashLocation) rowObject;
+				return column.getHashValue();
+			}
+
+			@Override
+			public int compare(AddressableRowObject o1, AddressableRowObject o2) {
+				return getColumnValue(o1).compareTo(getColumnValue(o2));
+			}
+		};
+
+		dialog.addCustomColumn(hashColumn);
+	}
+
+	class HashLocation implements AddressableRowObject {
+		private Program program;
+		private Address address;
+		private long hashValue;
+
+		HashLocation(Program prog, Address address, long hashValue) {
+			this.address = address;
+			this.hashValue = hashValue;
+		}
+
+		public Program getProgram() {
+			return program;
+		}
+
+		@Override
+		public Address getAddress() {
+			return address;
+		}
+
+		public String getHashValue() {
+			return String.format("%08x", hashValue);
 		}
 	}
 
