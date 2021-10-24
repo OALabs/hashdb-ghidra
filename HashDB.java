@@ -249,7 +249,6 @@ public class HashDB extends GhidraScript {
 	}
 
 	public void run() throws Exception {
-		HashDBApi api = new HashDBApi();
 		long hash;
 		try {
 			hash = getSelectedHash();
@@ -257,50 +256,58 @@ public class HashDB extends GhidraScript {
 			println(String.format("[HashDB] Error: %s", e.getMessage()));
 			return;
 		}
-		// showDialog(hash);
+		showDialog(hash);
 
 		println(String.format("[HashDB] Querying hash 0x%08x", hash));
 		long[] hashes = { hash };
+		resolveHashes(hashes);
+	}
 
+	private void resolveHashes(long[] hashes) throws Exception {
+		HashDBApi api = new HashDBApi();
 		ArrayList<String> algorithms = api.hunt(hashes);
 		if (algorithms.size() == 0) {
 			println(String.format("[HashDB] Could not identify any hashing algorithms"));
 		} else if (algorithms.size() == 1) {
-			String algorithm = algorithms.iterator().next();
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
-			if (resolved.size() == 0) {
-				println("[HashDB] No resolution found");
-				return;
-			} else if (resolved.size() > 1) {
-				println("[HashDB] Hash collision, using first value");
-			}
-			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
-			if (inputHashInfo.modules.length == 0) {
-				println("[HashDB] No module found");
-				return;
-			}
+			boolean resolveModule = true;
+			int resolveCount = 0;
 			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
-
 			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
-			EnumDataType hashEnumeration;
-			if (existingDataType == null) {
-				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), dialog.getEnumName(), 4);
-			} else {
-				hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
-			}
-			int cnt = 0;
-			for (String module : inputHashInfo.modules) {
-				for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
-					try {
-						hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
-						cnt++;
-					} catch (IllegalArgumentException e) {
+			EnumDataType hashEnumeration = existingDataType == null
+					? new EnumDataType(new CategoryPath("/HashDB"), dialog.getEnumName(), 4)
+					: (EnumDataType) existingDataType.copy(dataTypeManager);
+			String algorithm = algorithms.iterator().next();
+			for (long hash : hashes) {
+				ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
+				if (resolved.size() == 0) {
+					println("[HashDB] No resolution found");
+					return;
+				} else if (resolved.size() > 1) {
+					println("[HashDB] Hash collision, using first value");
+				}
+				HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
+				if (inputHashInfo.modules.length == 0) {
+					println(String.format("[HashDB] No module found for hash 0x%x", hash));
+					return;
+				}
+				if (resolveModule) {
+					for (String module : inputHashInfo.modules) {
+						for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
+								inputHashInfo.permutation)) {
+							try {
+								hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
+								resolveCount++;
+							} catch (IllegalArgumentException e) {
+							}
+						}
 					}
+				} else {
+					hashEnumeration.add(inputHashInfo.apiName, inputHashInfo.hash);
 				}
 			}
 
 			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
-			println(String.format("[HashDB] Added %d enum values to %s! \\o/", cnt, "ApiHashes"));
+			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, "ApiHashes"));
 
 		} else {
 			println("[HashDB] Not implemented yet");
