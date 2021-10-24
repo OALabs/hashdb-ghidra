@@ -325,8 +325,7 @@ public class HashDB extends GhidraScript {
 			}
 
 			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
-			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, "ApiHashes"));
-
+			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, dialog.getEnumName()));
 		} else {
 			println("[HashDB] Not implemented yet");
 		}
