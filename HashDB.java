@@ -334,7 +334,10 @@ public class HashDB extends GhidraScript {
 						}
 					}
 				} else {
-					hashEnumeration.add(inputHashInfo.apiName, inputHashInfo.hash);
+					try {
+						hashEnumeration.add(inputHashInfo.apiName, inputHashInfo.hash);
+					} catch (IllegalArgumentException e) {
+					}
 				}
 			}
 
