@@ -263,7 +263,7 @@ public class HashDB extends GhidraScript {
 			configureTableColumns(dialog);
 		}
 		state.getTool().showDialog(dialog);
-		dialog.add(new HashLocation(currentProgram, currentAddress, hash));
+		dialog.add(new HashLocation(currentAddress, hash));
 	}
 
 	public void run() throws Exception {
@@ -361,17 +361,12 @@ public class HashDB extends GhidraScript {
 	}
 
 	class HashLocation implements AddressableRowObject {
-		private Program program;
 		private Address address;
 		private long hashValue;
 
-		HashLocation(Program prog, Address address, long hashValue) {
+		HashLocation(Address address, long hashValue) {
 			this.address = address;
 			this.hashValue = hashValue;
-		}
-
-		public Program getProgram() {
-			return program;
 		}
 
 		@Override
