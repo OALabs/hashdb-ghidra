@@ -258,14 +258,23 @@ public class HashDB extends GhidraScript {
 	static HashTable dialog = null;
 	static HashMap<Address, HashLocation> selectedHashes = null;
 
-	private void showDialog(long hash) {
+	private void showDialog() {
 		if (dialog == null || !dialog.isVisible()) {
 			println("Creating new Dialog!");
 			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
 			configureTableColumns(dialog);
 		}
 		state.getTool().showDialog(dialog);
-		dialog.add(new HashLocation(currentAddress, hash));
+	}
+	
+	private boolean addHash(long hash) {
+		HashLocation newRow = new HashLocation(currentAddress, hash);
+		if (selectedHashes.containsKey(currentAddress)) {
+			return false;
+		}
+		selectedHashes.put(currentAddress, newRow);
+		dialog.add(newRow);
+		return true;
 	}
 
 	public void run() throws Exception {
@@ -279,11 +288,12 @@ public class HashDB extends GhidraScript {
 			println(String.format("[HashDB] Error: %s", e.getMessage()));
 			return;
 		}
-		showDialog(hash);
-
-		println(String.format("[HashDB] Querying hash 0x%08x", hash));
-		long[] hashes = { hash };
-		resolveHashes(hashes);
+		showDialog();
+		if (addHash(hash)) {
+			println(String.format("[HashDB] Querying hash 0x%08x", hash));
+			long[] hashes = { hash };
+			resolveHashes(hashes);
+		}
 	}
 
 	private void resolveHashes(long[] hashes) throws Exception {
