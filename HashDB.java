@@ -256,7 +256,7 @@ public class HashDB extends GhidraScript {
 	}
 
 	static HashTable dialog = null;
-	static HashMap<Address, HashLocation> selectedHashes = null;
+	static HashMap<Long, HashLocation> selectedHashes = null;
 
 	private void showDialog() {
 		if (dialog == null || !dialog.isVisible()) {
@@ -266,20 +266,20 @@ public class HashDB extends GhidraScript {
 		}
 		state.getTool().showDialog(dialog);
 	}
-	
+
 	private boolean addHash(long hash) {
 		HashLocation newRow = new HashLocation(currentAddress, hash);
-		if (selectedHashes.containsKey(currentAddress)) {
+		if (selectedHashes.containsKey(hash)) {
 			return false;
 		}
-		selectedHashes.put(currentAddress, newRow);
+		selectedHashes.put(hash, newRow);
 		dialog.add(newRow);
 		return true;
 	}
 
 	public void run() throws Exception {
 		if (selectedHashes == null) {
-			selectedHashes = new HashMap<Address, HashLocation>();
+			selectedHashes = new HashMap<Long, HashLocation>();
 		}
 		long hash;
 		try {
@@ -336,6 +336,11 @@ public class HashDB extends GhidraScript {
 				} else {
 					try {
 						hashEnumeration.add(inputHashInfo.apiName, inputHashInfo.hash);
+						if (selectedHashes.containsKey(inputHashInfo.hash)) {
+							HashLocation existingRow = selectedHashes.get(inputHashInfo.hash);
+							existingRow.resolution = inputHashInfo.apiName;
+							refreshTable();
+						}
 					} catch (IllegalArgumentException e) {
 					}
 				}
@@ -344,7 +349,16 @@ public class HashDB extends GhidraScript {
 			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
 			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, dialog.getEnumName()));
 		} else {
-			println("[HashDB] Not implemented yet");
+			println("[HashDB] More than 1 algorithm found, not implemented yet");
+		}
+	}
+
+	private void refreshTable() {
+		// TODO this is just a hack, find out the proper way to notify the dialog of
+		// changes in the underlying data
+		for (int i = 0; i < dialog.getRowCount(); i++) {
+			dialog.selectRows(i);
+			dialog.clearSelection();
 		}
 	}
 
@@ -364,8 +378,8 @@ public class HashDB extends GhidraScript {
 
 			@Override
 			public String getColumnValue(AddressableRowObject rowObject) {
-				HashLocation column = (HashLocation) rowObject;
-				return column.getHashValue();
+				HashLocation row = (HashLocation) rowObject;
+				return row.getHashValue();
 			}
 
 			@Override
@@ -375,15 +389,36 @@ public class HashDB extends GhidraScript {
 		};
 
 		dialog.addCustomColumn(hashColumn);
+		StringColumnDisplay resolutionColumn = new StringColumnDisplay() {
+			@Override
+			public String getColumnName() {
+				return "Resolution";
+			}
+
+			@Override
+			public String getColumnValue(AddressableRowObject rowObject) {
+				HashLocation row = (HashLocation) rowObject;
+				return row.getResolution() == null ? "-" : row.getResolution();
+			}
+
+			@Override
+			public int compare(AddressableRowObject o1, AddressableRowObject o2) {
+				return getColumnValue(o1).compareTo(getColumnValue(o2));
+			}
+		};
+
+		dialog.addCustomColumn(resolutionColumn);
 	}
 
 	class HashLocation implements AddressableRowObject {
 		private Address address;
 		private long hashValue;
+		private String resolution;
 
 		HashLocation(Address address, long hashValue) {
 			this.address = address;
 			this.hashValue = hashValue;
+			this.resolution = null;
 		}
 
 		@Override
@@ -393,6 +428,10 @@ public class HashDB extends GhidraScript {
 
 		public String getHashValue() {
 			return String.format("%08x", hashValue);
+		}
+
+		public String getResolution() {
+			return this.resolution;
 		}
 	}
 
