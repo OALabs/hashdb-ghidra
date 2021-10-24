@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
 
 import ghidra.app.decompiler.DecompilerLocation;
 import ghidra.app.nav.Navigatable;
@@ -255,6 +256,7 @@ public class HashDB extends GhidraScript {
 	}
 
 	static HashTable dialog = null;
+	static HashMap<Address, HashLocation> selectedHashes = null;
 
 	private void showDialog(long hash) {
 		if (dialog == null || !dialog.isVisible()) {
@@ -267,6 +269,9 @@ public class HashDB extends GhidraScript {
 	}
 
 	public void run() throws Exception {
+		if (selectedHashes == null) {
+			selectedHashes = new HashMap<Address, HashLocation>();
+		}
 		long hash;
 		try {
 			hash = getSelectedHash();
