@@ -69,6 +69,8 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 
 public class HashDB extends GhidraScript {
+	boolean HTTP_DEBUGGING = false;
+
 	private class HashDBApi {
 		private String baseUrl = "https://hashdb.openanalysis.net";
 
@@ -150,7 +152,9 @@ public class HashDB extends GhidraScript {
 
 		private String httpQuery(String method, String endpoint, byte[] postData) throws Exception {
 			String urlString = String.format("%s/%s", baseUrl, endpoint);
-			println(String.format("[HashDB] %s %s", method, urlString));
+			if (HTTP_DEBUGGING) {
+				println(String.format("[HashDB] %s %s", method, urlString));
+			}
 			URL url = new URL(urlString);
 			SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
 			sslContext.init(null, null, new SecureRandom());
@@ -175,7 +179,9 @@ public class HashDB extends GhidraScript {
 				while ((responseLine = br.readLine()) != null) {
 					response.append(responseLine.trim());
 				}
-				println(String.format("[HashDB] HTTP Response: %s", response));
+				if (HTTP_DEBUGGING) {
+					println(String.format("[HashDB] HTTP Response: %s", response));
+				}
 				return response.toString();
 			}
 		}
