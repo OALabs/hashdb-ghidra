@@ -287,7 +287,6 @@ public class HashDB extends GhidraScript {
 		if (algorithms.size() == 0) {
 			println(String.format("[HashDB] Could not identify any hashing algorithms"));
 		} else if (algorithms.size() == 1) {
-			boolean resolveModule = true;
 			int resolveCount = 0;
 			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
 			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
@@ -308,7 +307,7 @@ public class HashDB extends GhidraScript {
 					println(String.format("[HashDB] No module found for hash 0x%x", hash));
 					return;
 				}
-				if (resolveModule) {
+				if (dialog.resolveEntireModules()) {
 					for (String module : inputHashInfo.modules) {
 						for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
 								inputHashInfo.permutation)) {
