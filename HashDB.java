@@ -38,6 +38,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import docking.widgets.DropDownTextField;
+import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.label.GDLabel;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.CategoryPath;
@@ -203,6 +204,7 @@ public class HashDB extends GhidraScript {
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
 		private JTextField transformationTextField;
+		private GCheckBox resolveModulesCheckbox;
 
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
 			super(tool, executor, program, title, null, false);
@@ -216,14 +218,20 @@ public class HashDB extends GhidraScript {
 			return enumNameTextField.getText();
 		}
 
+		public boolean resolveEntireModules() {
+			return resolveModulesCheckbox.isSelected();
+		}
+
 		protected void addWorkPanel(JComponent hauptPanele) {
+			int rowCount = 3;
 			super.addWorkPanel(hauptPanele);
 
 			JPanel outerPanel = new JPanel(new BorderLayout(10, 10));
-			JPanel leftPanel = new JPanel(new GridLayout(2, 1));
-			JPanel rightPanel = new JPanel(new GridLayout(2, 1));
+			JPanel leftPanel = new JPanel(new GridLayout(rowCount, 1));
+			JPanel rightPanel = new JPanel(new GridLayout(rowCount, 1));
 			outerPanel.add(leftPanel, BorderLayout.WEST);
 			outerPanel.add(rightPanel, BorderLayout.CENTER);
+
 			leftPanel.add(new GDLabel("Enum Name:"));
 			enumNameTextField = new JTextField("HashDBEnum");
 			rightPanel.add(enumNameTextField);
@@ -231,6 +239,10 @@ public class HashDB extends GhidraScript {
 			leftPanel.add(new GDLabel("Hash Transformation:"));
 			transformationTextField = new JTextField("(((X ^ 0x76c7) << 0x10 ^ X) ^ 0xafb9) & 0x1fffff");
 			rightPanel.add(transformationTextField);
+
+			leftPanel.add(new GDLabel(""));
+			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
+			rightPanel.add(resolveModulesCheckbox);
 
 			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
 		}
