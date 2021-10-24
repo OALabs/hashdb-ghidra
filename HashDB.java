@@ -303,6 +303,7 @@ public class HashDB extends GhidraScript {
 		if (selectedHashes == null) {
 			selectedHashes = new HashMap<Long, HashLocation>();
 		}
+		boolean autoResolveNewHashes = false;
 		long hash;
 		try {
 			hash = getSelectedHash();
@@ -311,7 +312,7 @@ public class HashDB extends GhidraScript {
 			return;
 		}
 		showDialog();
-		if (addHash(hash)) {
+		if (addHash(hash) && autoResolveNewHashes) {
 			println(String.format("[HashDB] Querying hash 0x%08x", hash));
 			long[] hashes = { hash };
 			resolveHashes(hashes);
