@@ -7,6 +7,8 @@
 
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -65,6 +67,7 @@ import javax.net.ssl.SSLContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
@@ -233,11 +236,11 @@ public class HashDB extends GhidraScript {
 			int rowCount = 3;
 			super.addWorkPanel(hauptPanele);
 
-			JPanel outerPanel = new JPanel(new BorderLayout(10, 10));
+			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
 			JPanel leftPanel = new JPanel(new GridLayout(rowCount, 1));
 			JPanel rightPanel = new JPanel(new GridLayout(rowCount, 1));
-			outerPanel.add(leftPanel, BorderLayout.WEST);
-			outerPanel.add(rightPanel, BorderLayout.CENTER);
+			columnPanel.add(leftPanel, BorderLayout.WEST);
+			columnPanel.add(rightPanel, BorderLayout.CENTER);
 
 			leftPanel.add(new GDLabel("Enum Name:"));
 			enumNameTextField = new JTextField("HashDBEnum");
@@ -251,6 +254,25 @@ public class HashDB extends GhidraScript {
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
 			rightPanel.add(resolveModulesCheckbox);
 
+			JPanel outerPanel = new JPanel(new BorderLayout());
+			outerPanel.add(columnPanel, BorderLayout.NORTH);
+
+			JButton queryAllButton = new JButton("Query All");
+			outerPanel.add(queryAllButton, BorderLayout.SOUTH);
+			queryAllButton.addActionListener(new ActionListener() {
+				@Override
+				public void actionPerformed(ActionEvent e) {
+					List<Long> toQuery = new ArrayList<Long>();
+					for (HashLocation hashLocation : selectedHashes.values()) {
+						if (hashLocation.resolution == null) {
+							toQuery.add(hashLocation.hashValue);
+						}
+					}
+					try {
+						resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
+					} catch(Exception exception) {}
+				}
+			});
 			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
 		}
 	}
