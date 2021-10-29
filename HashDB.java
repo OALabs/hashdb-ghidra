@@ -388,7 +388,7 @@ public class HashDB extends GhidraScript {
 		try {
 			resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
 		} catch (Exception e) {
-			printf("[HashDB] exception during resultion: %s\n", e.toString());
+			println(String.format("[HashDB] exception during resolution: %s\n", e.toString()));
 		}
 
 	}
