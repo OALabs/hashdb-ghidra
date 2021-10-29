@@ -273,11 +273,17 @@ public class HashDB extends GhidraScript {
 	static HashMap<Long, HashLocation> selectedHashes = null;
 
 	private void showDialog() {
-		if (dialog == null || !dialog.isVisible()) {
-			println("Creating new Dialog!");
+		boolean newDialog = dialog == null || !dialog.isVisible();
+		if (newDialog || selectedHashes == null) {
+			println("[HashDB] Creating new hash map.");
+			selectedHashes = new HashMap<Long, HashLocation>();
+		}
+		if (newDialog) {
+			println("[HashDB] Creating new dialog.");
 			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
 			configureTableColumns(dialog);
 		}
+
 		state.getTool().showDialog(dialog);
 	}
 
@@ -292,9 +298,6 @@ public class HashDB extends GhidraScript {
 	}
 
 	public void run() throws Exception {
-		if (selectedHashes == null) {
-			selectedHashes = new HashMap<Long, HashLocation>();
-		}
 		boolean autoResolveNewHashes = false;
 		long hash;
 		try {
