@@ -327,12 +327,20 @@ public class HashDB extends GhidraScript {
 			println(String.format("[HashDB] Could not identify any hashing algorithms"));
 		} else if (algorithms.size() == 1) {
 			int resolveCount = 0;
+
+			String hashEnumName = dialog.getEnumName(); 
 			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
 			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
-			EnumDataType hashEnumeration = existingDataType == null
-					? new EnumDataType(new CategoryPath("/HashDB"), dialog.getEnumName(), 4)
-					: (EnumDataType) existingDataType.copy(dataTypeManager);
+			EnumDataType hashEnumeration = null;
+			
+			if (existingDataType == null) {
+				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), hashEnumName, 4);
+			} else {
+				hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
+			}
+
 			String algorithm = algorithms.iterator().next();
+
 			for (long hash : hashes) {
 				ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
 				if (resolved.size() == 0) {
@@ -355,10 +363,12 @@ public class HashDB extends GhidraScript {
 					}
 				} else {
 					onHashResolution(hashEnumeration, inputHashInfo);
+					resolveCount++;
 				}
 			}
-
+			int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashEnumName));
 			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
+			currentProgram.endTransaction(id, true);
 			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, dialog.getEnumName()));
 		} else {
 			println("[HashDB] More than 1 algorithm found, not implemented yet");
@@ -374,7 +384,10 @@ public class HashDB extends GhidraScript {
 		}
 		try {
 			resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
-		} catch(Exception exception) {}
+		} catch (Exception e) {
+			printf("[HashDB] exception during resultion: %s\n", e.toString());
+		}
+
 	}
 
 	private void refreshTable() {
