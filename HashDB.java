@@ -319,6 +319,15 @@ public class HashDB extends GhidraScript {
 		}
 	}
 
+	private void onHashResolution(EnumDataType hashEnumeration, HashDB.HashDBApi.HashInfo hashInfo) {
+		hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
+		if (selectedHashes.containsKey(hashInfo.hash)) {
+			HashLocation existingRow = selectedHashes.get(hashInfo.hash);
+			existingRow.resolution = hashInfo.apiName;
+			refreshTable();
+		}
+	}
+	
 	private void resolveHashes(long[] hashes) throws Exception {
 		HashDBApi api = new HashDBApi();
 		ArrayList<String> algorithms = api.hunt(hashes);
@@ -347,25 +356,13 @@ public class HashDB extends GhidraScript {
 				}
 				if (dialog.resolveEntireModules()) {
 					for (String module : inputHashInfo.modules) {
-						for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
-								inputHashInfo.permutation)) {
-							try {
-								hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
-								resolveCount++;
-							} catch (IllegalArgumentException e) {
-							}
+						for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
+							onHashResolution(hashEnumeration, hashInfo);
+							resolveCount++;
 						}
 					}
 				} else {
-					try {
-						hashEnumeration.add(inputHashInfo.apiName, inputHashInfo.hash);
-						if (selectedHashes.containsKey(inputHashInfo.hash)) {
-							HashLocation existingRow = selectedHashes.get(inputHashInfo.hash);
-							existingRow.resolution = inputHashInfo.apiName;
-							refreshTable();
-						}
-					} catch (IllegalArgumentException e) {
-					}
+					onHashResolution(hashEnumeration, inputHashInfo);
 				}
 			}
 
