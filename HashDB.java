@@ -262,15 +262,7 @@ public class HashDB extends GhidraScript {
 			queryAllButton.addActionListener(new ActionListener() {
 				@Override
 				public void actionPerformed(ActionEvent e) {
-					List<Long> toQuery = new ArrayList<Long>();
-					for (HashLocation hashLocation : selectedHashes.values()) {
-						if (hashLocation.resolution == null) {
-							toQuery.add(hashLocation.hashValue);
-						}
-					}
-					try {
-						resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
-					} catch(Exception exception) {}
+					resolveHashes();
 				}
 			});
 			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
@@ -371,6 +363,18 @@ public class HashDB extends GhidraScript {
 		} else {
 			println("[HashDB] More than 1 algorithm found, not implemented yet");
 		}
+	}
+
+	private void resolveHashes() {
+		List<Long> toQuery = new ArrayList<Long>();
+		for (HashLocation hashLocation : selectedHashes.values()) {
+			if (hashLocation.resolution == null) {
+				toQuery.add(hashLocation.hashValue);
+			}
+		}
+		try {
+			resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
+		} catch(Exception exception) {}
 	}
 
 	private void refreshTable() {
