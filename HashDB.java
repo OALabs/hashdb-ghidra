@@ -357,12 +357,12 @@ public class HashDB extends GhidraScript {
 			transformationTextField.setSelectedIndex(0);
 			rightPanel.add(transformationTextField);
 
-			leftPanel.add(new GDLabel("Hash Algorithm"));
+			leftPanel.add(new GDLabel("Hash Algorithm:"));
 			hashAlgorithmField = new JComboBox<>();
 			hashAlgorithmField.setEditable(true);
 			rightPanel.add(hashAlgorithmField);
 
-			leftPanel.add(new GDLabel("String Permutation"));
+			leftPanel.add(new GDLabel("String Permutation:"));
 			permutationField = new JComboBox<>();
 			rightPanel.add(permutationField);
 
