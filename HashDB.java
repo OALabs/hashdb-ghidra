@@ -226,6 +226,8 @@ public class HashDB extends GhidraScript {
 
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
 			super(tool, executor, program, title, null, false);
+			setFocusComponent(okButton);
+			okButton.setMnemonic('Q');
 		}
 
 		@Override
@@ -339,11 +341,21 @@ public class HashDB extends GhidraScript {
 				
 		}
 		
+		public void selectAllRows() {
+			selectRows(IntStream.range(0, getRowCount()).toArray());	
+		}
+		
+		@Override
+		public void dispose() {
+			// Prevent table from being destroyed: We are a naughty static dialog object.
+			return;
+		}
+		
 		@Override
 		protected void okCallback() {
 			TaskMonitor tm = getTaskMonitorComponent();
 			if (getSelectedRows().length == 0)
-				selectRows(IntStream.range(0, getRowCount()).toArray());
+				selectAllRows();
 			ArrayList<HashLocation> hashes = getSelectedRowObjects().stream().map(a -> (HashLocation) a)
 					.collect(Collectors.toCollection(ArrayList::new));
 			tm.initialize(hashes.size());
@@ -465,11 +477,19 @@ public class HashDB extends GhidraScript {
 	static HashTable dialog = null;
 
 	private void showDialog() {
-		if (dialog == null || !dialog.isVisible()) {
+		if (dialog == null) {
 			println("[HashDB] Creating new dialog.");
 			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
 			configureTableColumns(dialog);
 		}
+		if (!dialog.isVisible()) {
+			dialog.selectAllRows();
+			for (AddressableRowObject row : dialog.getSelectedRowObjects()) {
+				dialog.remove(row);
+			}
+			dialog.show();
+		}
+		
 		state.getTool().showDialog(dialog);
 	}
 
