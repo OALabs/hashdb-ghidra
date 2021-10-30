@@ -404,10 +404,8 @@ public class HashDB extends GhidraScript {
 			super.okCallback();
 		}
 
-		protected void addWorkPanel(JComponent hauptPanele) {
+		protected void addSettingsPanel(JComponent parent) {
 			int rowCount = 8;
-			super.addWorkPanel(hauptPanele);
-
 			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
 			JPanel leftPanel = new JPanel(new GridLayout(rowCount, 1));
 			JPanel rightPanel = new JPanel(new GridLayout(rowCount, 1));
@@ -467,10 +465,15 @@ public class HashDB extends GhidraScript {
 
 			JPanel outerPanel = new JPanel(new BorderLayout());
 			outerPanel.add(columnPanel, BorderLayout.NORTH);
-			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
+			parent.add(outerPanel, BorderLayout.SOUTH);
 			
 			transformationIsSelfInverseCheckbox.setSelected(true);
 			updateButtons.actionPerformed(null);
+		}
+		
+		protected void addWorkPanel(JComponent hauptPanele) {
+			super.addWorkPanel(hauptPanele);
+			addSettingsPanel(hauptPanele);
 		}
 	}
 
