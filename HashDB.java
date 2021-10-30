@@ -232,7 +232,12 @@ public class HashDB extends GhidraScript {
 		TransformationNotInvertible,
 		TransformationSelfInverse,
 		TransformationInverseManual
-	};
+	}
+
+	public enum OutputMethod {
+		Enum,
+		Struct
+	}
 	
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
@@ -265,6 +270,14 @@ public class HashDB extends GhidraScript {
 			return;
 		}
 
+		public OutputMethod getOutputMethod() throws IllegalStateException {
+			if (outputStructRadio.isSelected())
+				return OutputMethod.Struct;
+			if (outputEnumRadio.isSelected())
+				return OutputMethod.Enum;
+			throw new IllegalStateException();
+		}
+		
 		private String getComboBoxValue(JComboBox<String> box) {
 			String currentText;
 			try {
@@ -368,7 +381,6 @@ public class HashDB extends GhidraScript {
 				transformationIsSelfInverseCheckbox.setEnabled(true);
 				break;	
 			}
-				
 		}
 		
 		public void selectAllRows() {
