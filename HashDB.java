@@ -11,6 +11,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -49,6 +51,8 @@ import ghidra.program.model.scalar.Scalar;
 
 import java.net.URL;
 import java.security.SecureRandom;
+import java.awt.event.ActionListener;
+import java.awt.event.ActionEvent;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -203,12 +207,22 @@ public class HashDB extends GhidraScript {
 
 	}
 
+	public enum GuiState {
+		TransformationNotInvertible,
+		TransformationSelfInverse,
+		TransformationInverseManual
+	};
+	
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
+		private JTextField transformationInverseTextField;
 		private JComboBox<String> transformationTextField;
 		private JComboBox<String> hashAlgorithmField;
 		private JComboBox<String> permutationField;
 		private GCheckBox resolveModulesCheckbox;
+		
+		private GCheckBox transformationIsSelfInverseCheckbox;
+		private GCheckBox transformationIsNotInvertibleCheckbox;
 
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
 			super(tool, executor, program, title, null, false);
@@ -272,7 +286,21 @@ public class HashDB extends GhidraScript {
 		public String getTransformation() {
 			return transformationTextField.getEditor().getItem().toString();
 		}
-
+	
+		public boolean isTransformationInvertible() {
+			return !transformationIsNotInvertibleCheckbox.isSelected();
+		}
+		
+		public String getTransformationInverse() throws IllegalStateException {
+			if (transformationIsNotInvertibleCheckbox.isSelected()) {
+				throw new IllegalStateException();
+			}
+			if (transformationIsSelfInverseCheckbox.isSelected()) {
+				return getTransformation();
+			}
+			return transformationInverseTextField.getText();
+		}
+		
 		public String getEnumName() {
 			return enumNameTextField.getText();
 		}
@@ -281,6 +309,36 @@ public class HashDB extends GhidraScript {
 			return resolveModulesCheckbox.isSelected();
 		}
 
+		public GuiState getCurrentState() {
+			if (transformationIsNotInvertibleCheckbox.isSelected())
+				return GuiState.TransformationNotInvertible;
+			if (transformationIsSelfInverseCheckbox.isSelected())
+				return GuiState.TransformationSelfInverse;
+			return GuiState.TransformationInverseManual;
+		}
+
+		public void enableComponentsAccordingToState(GuiState guiState) {
+			switch (guiState) {
+			case TransformationInverseManual:
+				transformationInverseTextField.setEnabled(true);
+				resolveModulesCheckbox.setEnabled(true);
+				transformationIsSelfInverseCheckbox.setEnabled(true);
+				break;
+			case TransformationNotInvertible:
+				transformationInverseTextField.setEnabled(false);
+				resolveModulesCheckbox.setEnabled(false);
+				transformationIsSelfInverseCheckbox.setEnabled(false);
+				resolveModulesCheckbox.setSelected(false);
+				break;
+			case TransformationSelfInverse:
+				transformationInverseTextField.setEnabled(false);
+				resolveModulesCheckbox.setEnabled(true);
+				transformationIsSelfInverseCheckbox.setEnabled(true);
+				break;	
+			}
+				
+		}
+		
 		@Override
 		protected void okCallback() {
 			TaskMonitor tm = getTaskMonitorComponent();
@@ -335,7 +393,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		protected void addWorkPanel(JComponent hauptPanele) {
-			int rowCount = 5;
+			int rowCount = 8;
 			super.addWorkPanel(hauptPanele);
 
 			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
@@ -353,9 +411,32 @@ public class HashDB extends GhidraScript {
 			transformationTextField.setEditable(true);
 			transformationTextField.addItem("X /* Unaltered Hash Value */");
 			transformationTextField.addItem("X ^ 0xBAADF00D /* XOR */");
-			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xADB9) & 0x1FFFFF /*REvil*/");
+			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xAFB9) & 0x1FFFFF /*REvil*/");
 			transformationTextField.setSelectedIndex(0);
 			rightPanel.add(transformationTextField);
+			
+			final class UpdateButtons implements ActionListener {
+				@Override
+	            public void actionPerformed(ActionEvent e) {
+	            	enableComponentsAccordingToState(getCurrentState());
+	            }
+	        }
+			
+			UpdateButtons updateButtons = new UpdateButtons();
+			
+			leftPanel.add(new GDLabel());
+			transformationIsSelfInverseCheckbox = new GCheckBox("Transformation Is Self-Inverse");
+			transformationIsSelfInverseCheckbox.addActionListener(updateButtons);
+			rightPanel.add(transformationIsSelfInverseCheckbox);
+
+			leftPanel.add(new GDLabel());
+			transformationIsNotInvertibleCheckbox = new GCheckBox("Transformation Not Invertible");
+			transformationIsNotInvertibleCheckbox.addActionListener(updateButtons);			
+			rightPanel.add(transformationIsNotInvertibleCheckbox);
+
+			leftPanel.add(new GDLabel("Transformation Inverse:"));
+			transformationInverseTextField = new JTextField();
+			rightPanel.add(transformationInverseTextField);
 
 			leftPanel.add(new GDLabel("Hash Algorithm:"));
 			hashAlgorithmField = new JComboBox<>();
@@ -364,16 +445,20 @@ public class HashDB extends GhidraScript {
 
 			leftPanel.add(new GDLabel("String Permutation:"));
 			permutationField = new JComboBox<>();
+			permutationField.addItem("");
+			permutationField.setSelectedIndex(0);
 			rightPanel.add(permutationField);
 
-			leftPanel.add(new GDLabel(""));
+			leftPanel.add(new GDLabel());
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
 			rightPanel.add(resolveModulesCheckbox);
 
 			JPanel outerPanel = new JPanel(new BorderLayout());
 			outerPanel.add(columnPanel, BorderLayout.NORTH);
-
 			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
+			
+			transformationIsSelfInverseCheckbox.setSelected(true);
+			updateButtons.actionPerformed(null);
 		}
 	}
 
@@ -410,14 +495,13 @@ public class HashDB extends GhidraScript {
 		}
 	}
 
-	private int onHashResolution(EnumDataType hashEnumeration, HashLocation hl, HashDB.HashDBApi.HashInfo hashInfo) {
-		hl.resolution = hashInfo.apiName;
+	private int onHashResolution(EnumDataType hashEnumeration, HashDB.HashDBApi.HashInfo hashInfo, long baseHash) {
 		try {
-			hashEnumeration.add(hashInfo.apiName, hl.getHashAsLong());
+			hashEnumeration.add(hashInfo.apiName, baseHash);
 			return 1;
 		} catch (IllegalArgumentException e) {
 			if (GUI_DEBUGGING) {
-				println(String.format("[HashDB] could not add %s (%s) to %s: %s", hashInfo.apiName, hl.getHashValue(),
+				println(String.format("[HashDB] could not add %s (0x%08X) to %s: %s", hashInfo.apiName, baseHash,
 						hashEnumeration.getDisplayName(), e.toString()));
 			}
 			return 0;
@@ -429,7 +513,13 @@ public class HashDB extends GhidraScript {
 		long[] hashes = new long[hashLocations.size()];
 		for (int k = 0; k < hashLocations.size(); k++) {
 			long baseHash = hashLocations.get(k).getHashAsLong();
-			hashes[k] = transformHash(baseHash, dialog.getTransformation());
+			hashes[k] = transformHash(baseHash);
+			if (dialog.isTransformationInvertible()) {
+				long inverse = invertHashTransformation(hashes[k]);
+				if (inverse != baseHash) {
+					throw new IllegalArgumentException(String.format("inverse invalid for hash 0x%08X", baseHash));
+				}
+			}
 			if (GUI_DEBUGGING) {
 				println(String.format("[HashDB] Translated hash for 0x%08X is 0x%08X.", baseHash, hashes[k]));
 			}
@@ -460,11 +550,10 @@ public class HashDB extends GhidraScript {
 			tm.incrementProgress(taskHunt);
 		}
 
-		tm.setMessage(String.format("resolving hashes for algorithm %s", algorithm));
-
 		int resolveCount = 0;
 		String hashEnumName = dialog.getEnumName();
 		String remark = "";
+		Map<Long, String> resolvedHashes = new HashMap<Long, String>(); 
 		DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
 		DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
 		EnumDataType hashEnumeration = null;
@@ -477,6 +566,13 @@ public class HashDB extends GhidraScript {
 
 		for (int k = 0; k < hashes.length; k++) {
 			HashLocation hl = hashLocations.get(k);
+			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", hashes[k], hl.getHashAsLong()));
+			
+			if (resolvedHashes.containsKey(hashes[k])) {
+				hl.resolution = resolvedHashes.get(hashes[k]);
+				tm.incrementProgress(1);
+				continue;
+			}
 			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashes[k], permutation);
 			for (HashDB.HashDBApi.HashInfo hi : resolved)
 				dialog.addNewPermutation(hi.permutation, true);
@@ -489,21 +585,28 @@ public class HashDB extends GhidraScript {
 				}
 				continue;
 			}
+
 			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
+			hl.resolution = inputHashInfo.apiName;
+
 			if (inputHashInfo.modules.length == 0) {
-				println(String.format("[HashDB] No module found for hash %s.", hl.getHashValue()));
-				continue;
+				throw new IllegalStateException(String.format("No modules found for hash %s.", hl.getHashValue()));
 			}
+
 			if (dialog.resolveEntireModules()) {
 				for (String module : inputHashInfo.modules) {
-					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
-							inputHashInfo.permutation)) {
-						resolveCount += onHashResolution(hashEnumeration, hl, hashInfo);
+					if (permutation != null && inputHashInfo.permutation.compareTo(permutation) != 0)
+						continue;
+					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
+						resolveCount += onHashResolution(hashEnumeration, hashInfo, invertHashTransformation(hashInfo.hash));
+						resolvedHashes.put(hashInfo.hash, hashInfo.apiName);
 					}
 				}
 			} else {
-				resolveCount += onHashResolution(hashEnumeration, hl, inputHashInfo);
+				resolveCount += onHashResolution(hashEnumeration, inputHashInfo, invertHashTransformation(inputHashInfo.hash));
+				resolvedHashes.put(inputHashInfo.hash, inputHashInfo.apiName);
 			}
+
 			if (tm != null) {
 				tm.incrementProgress(1);
 			}
@@ -516,7 +619,15 @@ public class HashDB extends GhidraScript {
 				.trim();
 	}
 
-	private long transformHash(long hash, String transformation) throws ScriptException {
+	private long transformHash(long hash) throws ScriptException {
+		return applyTransformation(hash, dialog.getTransformation());
+	}
+	
+	private long invertHashTransformation(long hash) throws ScriptException {
+		return applyTransformation(hash, dialog.getTransformationInverse());
+	}
+	
+	private long applyTransformation(long hash, String transformation) throws ScriptException {
 		ScriptEngineManager manager = new ScriptEngineManager();
 		ScriptEngine engine = manager.getEngineByName("JavaScript");
 		engine.put("X", hash);
