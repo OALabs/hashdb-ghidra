@@ -517,7 +517,8 @@ public class HashDB extends GhidraScript {
 		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashEnumName));
 		dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
 		currentProgram.endTransaction(id, true);
-		return String.format("added %d enum values to %s.", resolveCount, hashEnumeration.getDisplayName());
+		return String.format("Added %d enum values to %s. %s",
+				resolveCount, hashEnumeration.getDisplayName(), remark).trim();
 	}
 
 	private long transformHash(long hash, String transformation) throws ScriptException {
