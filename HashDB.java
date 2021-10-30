@@ -414,9 +414,11 @@ public class HashDB extends GhidraScript {
 			public TwoColumnPanel(int rowCount) {
 				left = new JPanel(new GridLayout(rowCount, 1));
 				right = new JPanel(new GridLayout(rowCount, 1));
-				main = new JPanel(new BorderLayout(10, 10));
-				main.add(left, BorderLayout.WEST);
-				main.add(right, BorderLayout.CENTER);
+				main = new JPanel(new BorderLayout());
+				JPanel topAlignedContents = new JPanel(new BorderLayout(10, 10));
+				main.add(topAlignedContents, BorderLayout.NORTH);				
+				topAlignedContents.add(left, BorderLayout.WEST);
+				topAlignedContents.add(right, BorderLayout.CENTER);
 			}
 			
 			public JComponent getMain() {
@@ -437,9 +439,6 @@ public class HashDB extends GhidraScript {
 		protected JComponent addQuerySettingsPanel() {
 			TwoColumnPanel tc = new TwoColumnPanel(8);
 			
-			enumNameTextField = new JTextField("HashDBEnum");
-			tc.addRow("Enum Name:", enumNameTextField);
-
 			transformationTextField = new JComboBox<>();
 			transformationTextField.setEditable(true);
 			transformationTextField.addItem("X /* Unaltered Hash Value */");
@@ -486,8 +485,11 @@ public class HashDB extends GhidraScript {
 			return tc.getMain();
 		}
 		
-		protected JComponent addOutputSettingsPanel() {		
-			return new JPanel(new BorderLayout());
+		protected JComponent addOutputSettingsPanel() {
+			TwoColumnPanel tc = new TwoColumnPanel(1);
+			enumNameTextField = new JTextField("HashDBEnum");
+			tc.addRow("Enum Name:", enumNameTextField);
+			return tc.getMain();
 		}
 
 		protected JComponent addEditTablePanel() {
