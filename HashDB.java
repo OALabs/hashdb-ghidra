@@ -62,7 +62,8 @@ import javax.swing.JTextField;
 import javax.swing.SwingWorker;
 
 public class HashDB extends GhidraScript {
-	boolean HTTP_DEBUGGING = false;
+	boolean HTTP_DEBUGGING = true;
+	boolean GUI_DEBUGGING = false;
 
 	private class HashDBApi {
 		private String baseUrl = "https://hashdb.openanalysis.net";
@@ -375,6 +376,15 @@ public class HashDB extends GhidraScript {
 			hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
 			return 1;
 		} catch (IllegalArgumentException e) {
+			if (GUI_DEBUGGING) {
+				println(
+					String.format("[HashDB] could not add %s (%s) to %s: %s",
+						hashInfo.apiName,
+						hl.getHashValue(),
+						hashEnumeration.getDisplayName(),
+						e.toString()
+				));
+			}
 			return 0;
 		}
 	}
