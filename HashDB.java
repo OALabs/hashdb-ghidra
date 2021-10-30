@@ -203,9 +203,6 @@ public class HashDB extends GhidraScript {
 
 		@Override
 		public boolean execute(AddressableRowObject rowObject) {
-			HashLocation column = (HashLocation) rowObject;
-
-			println(String.format("%s", column.getHashValue()));
 			return false;
 		}
 
