@@ -14,6 +14,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.HashMap;
 
 import ghidra.app.decompiler.DecompilerLocation;
@@ -28,11 +32,13 @@ import ghidra.app.tablechooser.ColumnDisplay;
 import ghidra.app.tablechooser.StringColumnDisplay;
 import ghidra.app.tablechooser.TableChooserDialog;
 import ghidra.app.tablechooser.TableChooserExecutor;
+
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.util.AddressFieldLocation;
 import ghidra.program.util.EquateOperandFieldLocation;
 import ghidra.program.util.OperandFieldLocation;
+import ghidra.util.task.TaskMonitor;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -68,9 +74,11 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.SwingWorker;
 
 public class HashDB extends GhidraScript {
 	boolean HTTP_DEBUGGING = false;
@@ -210,15 +218,40 @@ public class HashDB extends GhidraScript {
 
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
-		private JTextField transformationTextField;
+		private JComboBox<String> transformationTextField;
+		private JComboBox<String> hashAlgorithmField;
 		private GCheckBox resolveModulesCheckbox;
 
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
 			super(tool, executor, program, title, null, false);
 		}
 
+		@Override
+		protected void setOkEnabled(boolean state) {
+			return;
+		}
+		
+		public void addNewHashAlgorithm(String algorithm, boolean selectIt) {
+			boolean exists = false;
+			if (getCurrentHashAlgorithm() == algorithm)
+				exists = true;
+			for (int k = 0; !exists && k < hashAlgorithmField.getItemCount(); k++) {
+				String item = hashAlgorithmField.getItemAt(k);
+				if (item == algorithm)
+					exists = true;
+			}
+			if (!exists)
+				hashAlgorithmField.addItem(algorithm);
+			if (selectIt)
+				hashAlgorithmField.setSelectedItem(algorithm);
+		}
+
+		public String getCurrentHashAlgorithm() {
+			return hashAlgorithmField.getEditor().getItem().toString();
+		}
+		
 		public String getTransformation() {
-			return transformationTextField.getText();
+			return transformationTextField.getEditor().getItem().toString();
 		}
 
 		public String getEnumName() {
@@ -229,8 +262,62 @@ public class HashDB extends GhidraScript {
 			return resolveModulesCheckbox.isSelected();
 		}
 
+		@Override
+		protected void okCallback() {
+			TaskMonitor tm = getTaskMonitorComponent();
+			if (getSelectedRows().length == 0)
+				selectRows(IntStream.range(0, getRowCount()).toArray());
+			ArrayList<HashLocation> hashes = getSelectedRowObjects()
+					.stream().map(a -> (HashLocation) a)
+					.collect(Collectors.toCollection(ArrayList::new));
+			tm.initialize(hashes.size());
+			showProgressBar("Querying HashDB", true, false, 0);
+			
+			final class Resolver extends SwingWorker<String, Object> {
+
+				private final TaskMonitor taskMonitor;
+				private final ArrayList<HashLocation> hashLocations;
+
+				Resolver(ArrayList<HashLocation> hashLocations, TaskMonitor taskMonitor) {
+					this.hashLocations = hashLocations;
+					this.taskMonitor = taskMonitor;
+				}
+
+				@Override
+				protected String doInBackground() throws Exception {
+					try {
+						return resolveHashes(hashLocations, taskMonitor);
+					} catch (Exception e) {
+						println(String.format("[HashDB] exception during resolution: %s\n", e.toString()));
+						return "unexpected error during resolution, see log";
+					}
+				}
+
+				@Override
+				protected void done() {
+					String resultText;
+					try {
+						resultText = get();
+					} catch (InterruptedException | ExecutionException e) {
+						resultText =  "unknown error during execution";
+					}
+					clearSelection();
+					selectRows();
+					hideTaskMonitorComponent();
+					setStatusText(resultText);
+				}
+			}
+				
+			Resolver resolver = new Resolver(hashes, tm);
+			resolver.execute();
+		}
+		
+		public void parentOkCallback() {
+			super.okCallback();
+		}
+		
 		protected void addWorkPanel(JComponent hauptPanele) {
-			int rowCount = 3;
+			int rowCount = 4;
 			super.addWorkPanel(hauptPanele);
 
 			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
@@ -244,52 +331,43 @@ public class HashDB extends GhidraScript {
 			rightPanel.add(enumNameTextField);
 
 			leftPanel.add(new GDLabel("Hash Transformation:"));
-			transformationTextField = new JTextField("(((X ^ 0x76c7) << 0x10 ^ X) ^ 0xafb9) & 0x1fffff");
+			transformationTextField = new JComboBox<>();
+			transformationTextField.setEditable(true);
+			transformationTextField.addItem("X /* Unaltered Hash Value */");
+			transformationTextField.addItem("X ^ 0xBAADF00D /* XOR */");
+			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xADB9) & 0x1FFFFF /*REvil*/");
+			transformationTextField.setSelectedIndex(0);			
 			rightPanel.add(transformationTextField);
 
+			leftPanel.add(new GDLabel("Hash Algorithm"));
+			hashAlgorithmField = new JComboBox<>();
+			hashAlgorithmField.setEditable(true);
+			rightPanel.add(hashAlgorithmField);
+			
 			leftPanel.add(new GDLabel(""));
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
 			rightPanel.add(resolveModulesCheckbox);
-
+			
 			JPanel outerPanel = new JPanel(new BorderLayout());
 			outerPanel.add(columnPanel, BorderLayout.NORTH);
 
-			JButton queryAllButton = new JButton("Query All");
-			outerPanel.add(queryAllButton, BorderLayout.SOUTH);
-			queryAllButton.addActionListener(new ActionListener() {
-				@Override
-				public void actionPerformed(ActionEvent e) {
-					resolveHashes();
-				}
-			});
 			hauptPanele.add(outerPanel, BorderLayout.SOUTH);
 		}
 	}
 
 	static HashTable dialog = null;
-	static HashMap<Long, HashLocation> selectedHashes = null;
 
 	private void showDialog() {
-		boolean newDialog = dialog == null || !dialog.isVisible();
-		if (newDialog || selectedHashes == null) {
-			println("[HashDB] Creating new hash map.");
-			selectedHashes = new HashMap<Long, HashLocation>();
-		}
-		if (newDialog) {
+		if (dialog == null || !dialog.isVisible()) {
 			println("[HashDB] Creating new dialog.");
 			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
 			configureTableColumns(dialog);
 		}
-
 		state.getTool().showDialog(dialog);
 	}
 
 	private boolean addHash(long hash) {
 		HashLocation newRow = new HashLocation(currentAddress, hash);
-		if (selectedHashes.containsKey(hash)) {
-			return false;
-		}
-		selectedHashes.put(hash, newRow);
 		dialog.add(newRow);
 		return true;
 	}
@@ -306,104 +384,101 @@ public class HashDB extends GhidraScript {
 		showDialog();
 		if (addHash(hash) && autoResolveNewHashes) {
 			println(String.format("[HashDB] Querying hash 0x%08x", hash));
-			long[] hashes = { hash };
-			resolveHashes(hashes);
+			dialog.okCallback();
 		}
 	}
 
-	private void onHashResolution(EnumDataType hashEnumeration, HashDB.HashDBApi.HashInfo hashInfo) {
-		hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
-		if (selectedHashes.containsKey(hashInfo.hash)) {
-			HashLocation existingRow = selectedHashes.get(hashInfo.hash);
-			existingRow.resolution = hashInfo.apiName;
-			refreshTable();
+	private int onHashResolution(EnumDataType hashEnumeration, HashLocation hl, HashDB.HashDBApi.HashInfo hashInfo) {
+		hl.resolution = hashInfo.apiName;
+		try {
+			hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
+			return 1;
+		} catch (IllegalArgumentException e) {
+			return 0;
 		}
 	}
 	
-	private void resolveHashes(long[] hashes) throws Exception {
+	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
 		HashDBApi api = new HashDBApi();
-		ArrayList<String> algorithms = api.hunt(hashes);
-		if (algorithms.size() == 0) {
-			println(String.format("[HashDB] Could not identify any hashing algorithms"));
-		} else if (algorithms.size() == 1) {
-			int resolveCount = 0;
-
-			String hashEnumName = dialog.getEnumName(); 
-			DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
-			DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
-			EnumDataType hashEnumeration = null;
-			
-			if (existingDataType == null) {
-				hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), hashEnumName, 4);
+		long[] hashes = new long[hashLocations.size()];
+		for (int k = 0; k < hashLocations.size(); k++)
+			hashes[k] = transformHash(hashLocations.get(k).getHashAsLong(), dialog.getTransformation());
+		long taskTotal = tm.getMaximum();
+		String algorithm = dialog.getCurrentHashAlgorithm();
+		
+		if (algorithm.isBlank()) {
+			long taskHunt = taskTotal / 2;
+			if (taskHunt < 1) {
+				taskHunt = 1;
+			}
+			taskTotal += taskHunt;
+			tm.setMaximum(taskTotal);
+			tm.setMessage("guessing hash function");
+			ArrayList<String> algorithms = api.hunt(hashes);
+			if (algorithms.size() == 0) {
+				return "could not identify any hashing algorithms";
+			} else if (algorithms.size() == 1) {
+				algorithm = algorithms.iterator().next();
+				dialog.addNewHashAlgorithm(algorithm, true);
 			} else {
-				hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
+				for (String a: algorithms)
+					dialog.addNewHashAlgorithm(a, false);	
+				return "please select an algorithm";				
 			}
+			tm.incrementProgress(taskHunt);
+		}
+		
+		tm.setMessage(String.format("resolving hashes for algorithm %s", algorithm));
 
-			String algorithm = algorithms.iterator().next();
-
-			for (long hash : hashes) {
-				ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hash);
-				if (resolved.size() == 0) {
-					println("[HashDB] No resolution found");
-					return;
-				} else if (resolved.size() > 1) {
-					println("[HashDB] Hash collision, using first value");
-				}
-				HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
-				if (inputHashInfo.modules.length == 0) {
-					println(String.format("[HashDB] No module found for hash 0x%x", hash));
-					return;
-				}
-				if (dialog.resolveEntireModules()) {
-					for (String module : inputHashInfo.modules) {
-						for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
-							onHashResolution(hashEnumeration, hashInfo);
-							resolveCount++;
-						}
-					}
-				} else {
-					onHashResolution(hashEnumeration, inputHashInfo);
-					resolveCount++;
-				}
-			}
-			int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashEnumName));
-			dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
-			currentProgram.endTransaction(id, true);
-			println(String.format("[HashDB] Added %d enum values to %s! \\o/", resolveCount, dialog.getEnumName()));
+		int resolveCount = 0;
+		String hashEnumName = dialog.getEnumName(); 
+		DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
+		DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
+		EnumDataType hashEnumeration = null;
+		
+		if (existingDataType == null) {
+			hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), hashEnumName, 4);
 		} else {
-			println("[HashDB] More than 1 algorithm found, not implemented yet");
+			hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
 		}
-	}
 
-	private void resolveHashes() {
-		List<Long> toQuery = new ArrayList<Long>();
-		for (HashLocation hashLocation : selectedHashes.values()) {
-			if (hashLocation.resolution == null) {
-				toQuery.add(hashLocation.hashValue);
+		for (HashLocation hl: hashLocations) {
+			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hl.getHashAsLong());
+			if (resolved.size() == 0) {
+				continue;
+			} else if (resolved.size() > 1) {
+				println(String.format("[HashDB] Hash collision for %s, using first value.", hl.getHashValue()));
+			}
+			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
+			if (inputHashInfo.modules.length == 0) {
+				println(String.format("[HashDB] No module found for hash %s.", hl.getHashValue()));
+				continue;
+			}
+			if (dialog.resolveEntireModules()) {
+				for (String module : inputHashInfo.modules) {
+					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
+						resolveCount += onHashResolution(hashEnumeration, hl, hashInfo);
+					}
+				}
+			} else {
+				resolveCount += onHashResolution(hashEnumeration, hl, inputHashInfo);
+			}
+			if (tm != null) {
+				tm.incrementProgress(1);
 			}
 		}
-		try {
-			resolveHashes(toQuery.stream().mapToLong(l -> l).toArray());
-		} catch (Exception e) {
-			println(String.format("[HashDB] exception during resolution: %s\n", e.toString()));
-		}
-
-	}
-
-	private void refreshTable() {
-		// TODO this is just a hack, find out the proper way to notify the dialog of
-		// changes in the underlying data
-		for (int i = 0; i < dialog.getRowCount(); i++) {
-			dialog.selectRows(i);
-			dialog.clearSelection();
-		}
+		tm.setMessage(String.format("updating data type %s", hashEnumeration.getDisplayName()));
+		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashEnumName));
+		dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
+		currentProgram.endTransaction(id, true);
+		return String.format("added %d enum values to %s.", resolveCount, hashEnumeration.getDisplayName());
 	}
 
 	private long transformHash(long hash, String transformation) throws ScriptException {
 		ScriptEngineManager manager = new ScriptEngineManager();
 		manager.put("X", hash);
 		ScriptEngine engine = manager.getEngineByName("js");
-		return (long) engine.eval(transformation);
+		return Long.valueOf(engine.eval(transformation).toString());
 	}
 
 	private void configureTableColumns(TableChooserDialog dialog) {
@@ -463,6 +538,10 @@ public class HashDB extends GhidraScript {
 			return address;
 		}
 
+		public long getHashAsLong() {
+			return hashValue;
+		}
+		
 		public String getHashValue() {
 			return String.format("%08x", hashValue);
 		}
