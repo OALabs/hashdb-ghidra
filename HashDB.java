@@ -83,6 +83,13 @@ public class HashDB extends GhidraScript {
 	boolean HTTP_DEBUGGING = false;
 	boolean GUI_DEBUGGING = false;
 
+	static String getStackTraceAsString(Exception e) {
+		StringWriter sw = new StringWriter();
+		PrintWriter pw = new PrintWriter(sw);
+		e.printStackTrace(pw);
+		return sw.toString();
+	}
+	
 	private class HashDBApi {
 		private String baseUrl = "https://hashdb.openanalysis.net";
 
@@ -370,8 +377,10 @@ public class HashDB extends GhidraScript {
 		
 		@Override
 		public void dispose() {
-			// Prevent table from being destroyed: We are a naughty static dialog object.
-			return;
+			selectAllRows();
+			for (AddressableRowObject row : dialog.getSelectedRowObjects()) {
+				remove(row);
+			}
 		}
 		
 		@Override
@@ -399,10 +408,7 @@ public class HashDB extends GhidraScript {
 					try {
 						return resolveHashes(hashLocations, taskMonitor);
 					} catch (Exception e) {
-						StringWriter sw = new StringWriter();
-						PrintWriter pw = new PrintWriter(sw);
-						e.printStackTrace(pw);
-						println(String.format("[HashDB] exception during resolution: %s\n", sw.toString()));
+						println(String.format("[HashDB] exception during resolution: %s\n", getStackTraceAsString(e)));
 						return "unexpected error during resolution, see log";
 					}
 				}
@@ -415,7 +421,7 @@ public class HashDB extends GhidraScript {
 					} catch (InterruptedException | ExecutionException e) {
 						resultText = "unknown error during execution";
 					}
-					clearSelection();
+					waitAndClearSelection();
 					selectRows();
 					hideTaskMonitorComponent();
 					setStatusText(resultText);
@@ -426,6 +432,13 @@ public class HashDB extends GhidraScript {
 			resolver.execute();
 		}
 
+		public void waitAndClearSelection() {
+			while (dialog.isBusy()) {
+				try { Thread.sleep(10); } catch (Exception e) {}
+			}
+			clearSelection();
+		}
+		
 		public void parentOkCallback() {
 			super.okCallback();
 		}
@@ -569,10 +582,6 @@ public class HashDB extends GhidraScript {
 			configureTableColumns(dialog);
 		}
 		if (!dialog.isVisible()) {
-			dialog.selectAllRows();
-			for (AddressableRowObject row : dialog.getSelectedRowObjects()) {
-				dialog.remove(row);
-			}
 			dialog.show();
 		}
 		
@@ -580,8 +589,17 @@ public class HashDB extends GhidraScript {
 	}
 
 	private boolean addHash(Address address, long hash) {
-		HashLocation newRow = new HashLocation(address, hash);
-		dialog.add(newRow);
+		dialog.selectAllRows();
+		for (AddressableRowObject aro : dialog.getSelectedRowObjects()) {
+			HashLocation hl = (HashLocation) aro;
+			if (hl.getHashAsLong() == hash) {
+				dialog.waitAndClearSelection();
+				return false;
+			}
+		}
+		
+		dialog.add(new HashLocation(address, hash));
+		dialog.waitAndClearSelection();		
 		return true;
 	}
 
@@ -599,7 +617,7 @@ public class HashDB extends GhidraScript {
 			try {
 				addHash(currentAddress, getSelectedHash());
 			} catch (Exception e) {
-				println(String.format("[HashDB] Error: %s", e.getMessage()));
+				println(String.format("[HashDB] Error: %s", getStackTraceAsString(e)));
 				return;
 			}
 		}
