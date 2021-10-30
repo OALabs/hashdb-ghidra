@@ -523,8 +523,8 @@ public class HashDB extends GhidraScript {
 
 	private long transformHash(long hash, String transformation) throws ScriptException {
 		ScriptEngineManager manager = new ScriptEngineManager();
-		manager.put("X", hash);
-		ScriptEngine engine = manager.getEngineByName("js");
+		ScriptEngine engine = manager.getEngineByName("JavaScript");
+		engine.put("X", hash);
 		return Long.valueOf(engine.eval(transformation).toString());
 	}
 
