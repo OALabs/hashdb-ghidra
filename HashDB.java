@@ -125,15 +125,19 @@ public class HashDB extends GhidraScript {
 			return ret;
 		}
 
-		private ArrayList<HashInfo> resolve(String algorithm, long hash) throws Exception {
+		private ArrayList<HashInfo> resolve(String algorithm, long hash, String permutation) throws Exception {
 			ArrayList<HashInfo> ret = parseHashInfoFromJson(
 					httpQuery("GET", String.format("hash/%s/%d", algorithm, hash)));
+			ArrayList<HashInfo> filtered = new ArrayList<HashInfo>();
 			for (HashInfo hashInfo : ret) {
+				if (permutation != null && hashInfo.permutation.compareTo(permutation) != 0)
+					continue;
 				if (hashInfo.hash != hash) {
 					throw new Exception("hash mismatch");
 				}
+				filtered.add(hashInfo);
 			}
-			return ret;
+			return filtered;
 		}
 
 		private ArrayList<HashInfo> module(String module, String algorithm, String permutation) throws Exception {
@@ -203,6 +207,7 @@ public class HashDB extends GhidraScript {
 		private JTextField enumNameTextField;
 		private JComboBox<String> transformationTextField;
 		private JComboBox<String> hashAlgorithmField;
+		private JComboBox<String> permutationField;
 		private GCheckBox resolveModulesCheckbox;
 
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
@@ -213,24 +218,55 @@ public class HashDB extends GhidraScript {
 		protected void setOkEnabled(boolean state) {
 			return;
 		}
+
+		private String getComboBoxValue(JComboBox<String> box) {
+			String currentText;
+			try {
+				currentText = box.getEditor().getItem().toString();
+			} catch (Exception e1) {
+				try {
+					currentText = box.getSelectedItem().toString();
+				} catch (Exception e2) {
+					return null;
+				}
+			}
+			if (currentText.isBlank())
+				return null;
+			return currentText.trim();
+		}
 		
-		public void addNewHashAlgorithm(String algorithm, boolean selectIt) {
+		private void addToComboBox(JComboBox<String> box, String value, boolean selectIt) {
 			boolean exists = false;
-			if (getCurrentHashAlgorithm() == algorithm)
+			if (value == null)
+				return;
+			value = value.trim();
+			if (getComboBoxValue(box) == value)
 				exists = true;
-			for (int k = 0; !exists && k < hashAlgorithmField.getItemCount(); k++) {
-				String item = hashAlgorithmField.getItemAt(k);
-				if (item == algorithm)
+			for (int k = 0; !exists && k < box.getItemCount(); k++) {
+				String item = box.getItemAt(k);
+				if (item.compareTo(value) == 0)
 					exists = true;
 			}
 			if (!exists)
-				hashAlgorithmField.addItem(algorithm);
+				box.addItem(value);
 			if (selectIt)
-				hashAlgorithmField.setSelectedItem(algorithm);
+				box.setSelectedItem(value);
+		}
+		
+		public void addNewPermutation(String permutation, boolean selectIt) {
+			addToComboBox(permutationField, permutation, selectIt);
+		}
+
+		public String getCurrentPermutation() {
+			return getComboBoxValue(permutationField);
+		}
+	
+		public void addNewHashAlgorithm(String algorithm, boolean selectIt) {
+			addToComboBox(hashAlgorithmField, algorithm, selectIt);
 		}
 
 		public String getCurrentHashAlgorithm() {
-			return hashAlgorithmField.getEditor().getItem().toString();
+			return getComboBoxValue(hashAlgorithmField);
 		}
 		
 		public String getTransformation() {
@@ -300,7 +336,7 @@ public class HashDB extends GhidraScript {
 		}
 		
 		protected void addWorkPanel(JComponent hauptPanele) {
-			int rowCount = 4;
+			int rowCount = 5;
 			super.addWorkPanel(hauptPanele);
 
 			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
@@ -326,6 +362,10 @@ public class HashDB extends GhidraScript {
 			hashAlgorithmField = new JComboBox<>();
 			hashAlgorithmField.setEditable(true);
 			rightPanel.add(hashAlgorithmField);
+
+			leftPanel.add(new GDLabel("String Permutation"));
+			permutationField = new JComboBox<>();
+			rightPanel.add(permutationField);
 			
 			leftPanel.add(new GDLabel(""));
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
@@ -393,12 +433,18 @@ public class HashDB extends GhidraScript {
 	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
 		HashDBApi api = new HashDBApi();
 		long[] hashes = new long[hashLocations.size()];
-		for (int k = 0; k < hashLocations.size(); k++)
-			hashes[k] = transformHash(hashLocations.get(k).getHashAsLong(), dialog.getTransformation());
+		for (int k = 0; k < hashLocations.size(); k++) {
+			long baseHash = hashLocations.get(k).getHashAsLong();
+			hashes[k] = transformHash(baseHash, dialog.getTransformation());
+			if (GUI_DEBUGGING) {
+				println(String.format("[HashDB] Translated hash for 0x%08X is 0x%08X.", baseHash, hashes[k]));
+			}
+		}
 		long taskTotal = tm.getMaximum();
 		String algorithm = dialog.getCurrentHashAlgorithm();
+		String permutation = dialog.getCurrentPermutation();
 		
-		if (algorithm.isBlank()) {
+		if (algorithm == null) {
 			long taskHunt = taskTotal / 2;
 			if (taskHunt < 1) {
 				taskHunt = 1;
@@ -423,7 +469,8 @@ public class HashDB extends GhidraScript {
 		tm.setMessage(String.format("resolving hashes for algorithm %s", algorithm));
 
 		int resolveCount = 0;
-		String hashEnumName = dialog.getEnumName(); 
+		String hashEnumName = dialog.getEnumName();
+		String remark = "";
 		DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
 		DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
 		EnumDataType hashEnumeration = null;
@@ -436,11 +483,17 @@ public class HashDB extends GhidraScript {
 
 		for (int k = 0; k < hashes.length; k++) {
 			HashLocation hl = hashLocations.get(k);
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashes[k]);
+			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashes[k], permutation);
+			for (HashDB.HashDBApi.HashInfo hi : resolved)
+				dialog.addNewPermutation(hi.permutation, true);
 			if (resolved.size() == 0) {
 				continue;
 			} else if (resolved.size() > 1) {
-				println(String.format("[HashDB] Hash collision for %s, using first value.", hl.getHashValue()));
+				println(String.format("[HashDB] Hash collision for %s, skipping.", hl.getHashValue()));
+				if (permutation == null) {
+					remark = "Select a permutation to resolve remaining hashes.";
+				}
+				continue;
 			}
 			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
 			if (inputHashInfo.modules.length == 0) {
