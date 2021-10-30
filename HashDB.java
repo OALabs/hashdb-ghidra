@@ -382,7 +382,7 @@ public class HashDB extends GhidraScript {
 			ArrayList<HashLocation> hashes = getSelectedRowObjects().stream().map(a -> (HashLocation) a)
 					.collect(Collectors.toCollection(ArrayList::new));
 			tm.initialize(hashes.size());
-			showProgressBar("Querying HashDB", true, false, 0);
+			showProgressBar("Querying HashDB", true, true, 0);
 
 			final class Resolver extends SwingWorker<String, Object> {
 
@@ -681,6 +681,8 @@ public class HashDB extends GhidraScript {
 
 		for (int k = 0; k < hashes.length; k++) {
 			HashLocation hl = hashLocations.get(k);
+			if (tm.isCancelled())
+				break;
 			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", hashes[k], hl.getHashAsLong()));
 			
 			if (resolvedHashes.containsKey(hashes[k])) {
