@@ -62,6 +62,7 @@ import javax.script.ScriptException;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingWorker;
 
@@ -404,7 +405,7 @@ public class HashDB extends GhidraScript {
 			super.okCallback();
 		}
 
-		protected void addSettingsPanel(JComponent parent) {
+		protected JComponent addQuerySettingsPanel() {
 			int rowCount = 8;
 			JPanel columnPanel = new JPanel(new BorderLayout(10, 10));
 			JPanel leftPanel = new JPanel(new GridLayout(rowCount, 1));
@@ -465,15 +466,36 @@ public class HashDB extends GhidraScript {
 
 			JPanel outerPanel = new JPanel(new BorderLayout());
 			outerPanel.add(columnPanel, BorderLayout.NORTH);
-			parent.add(outerPanel, BorderLayout.SOUTH);
-			
 			transformationIsSelfInverseCheckbox.setSelected(true);
 			updateButtons.actionPerformed(null);
+			return outerPanel;
 		}
 		
+		protected JComponent addOutputSettingsPanel() {
+			return new JPanel(new BorderLayout());
+		}
+
+		protected JComponent addEditTablePanel() {
+			return new JPanel(new BorderLayout());
+		}
+
+		protected JComponent addScanMemoryPanel() {
+			return new JPanel(new BorderLayout());
+		}
+		
+		protected JComponent addScanFunctionPanel() {
+			return new JPanel(new BorderLayout());
+		}
+
 		protected void addWorkPanel(JComponent hauptPanele) {
+			JTabbedPane McPane = new JTabbedPane(); // McPane defies common camelCaseConventions
 			super.addWorkPanel(hauptPanele);
-			addSettingsPanel(hauptPanele);
+			McPane.addTab("Query Settings", addQuerySettingsPanel());
+			McPane.addTab("Output Settings", addOutputSettingsPanel());
+			McPane.addTab("Edit Table", addEditTablePanel());
+			McPane.addTab("Scan Memory", addScanMemoryPanel());
+			McPane.addTab("Scan Function", addScanFunctionPanel());
+			hauptPanele.add(McPane, BorderLayout.SOUTH);
 		}
 	}
 
