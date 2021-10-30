@@ -1,42 +1,28 @@
 //Script to look up API functions in HashDB (https://hashdb.openanalysis.net/)
-//@author @larsborn
-//@category malRE
-//@keybinding 
+//@author @larsborn @huettenhain
+//@category HashDB
+//@keybinding F3
 //@menupath 
 //@toolbar 
 
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.HashMap;
 
 import ghidra.app.decompiler.DecompilerLocation;
-import ghidra.app.nav.Navigatable;
-import ghidra.app.plugin.core.instructionsearch.InstructionSearchPlugin;
-import ghidra.app.plugin.core.instructionsearch.ui.InstructionSearchDialog;
-import ghidra.app.plugin.core.instructionsearch.util.InstructionSearchUtils;
-import ghidra.app.plugin.core.string.StringTablePlugin;
 import ghidra.app.script.GhidraScript;
 import ghidra.app.tablechooser.AddressableRowObject;
-import ghidra.app.tablechooser.ColumnDisplay;
 import ghidra.app.tablechooser.StringColumnDisplay;
 import ghidra.app.tablechooser.TableChooserDialog;
 import ghidra.app.tablechooser.TableChooserExecutor;
 
-import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.PluginTool;
-import ghidra.program.util.AddressFieldLocation;
-import ghidra.program.util.EquateOperandFieldLocation;
 import ghidra.program.util.OperandFieldLocation;
 import ghidra.util.task.TaskMonitor;
 
@@ -46,7 +32,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import docking.widgets.DropDownTextField;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.label.GDLabel;
 import ghidra.program.model.address.Address;
@@ -56,14 +41,11 @@ import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
-import ghidra.program.model.lang.Register;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
-import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
-import ghidra.program.model.symbol.Reference;
 
 import java.net.URL;
 import java.security.SecureRandom;
@@ -73,7 +55,6 @@ import javax.net.ssl.SSLContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
-import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
