@@ -8,8 +8,12 @@
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +30,7 @@ import ghidra.app.tablechooser.TableChooserExecutor;
 
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.util.OperandFieldLocation;
+import ghidra.util.exception.NotFoundException;
 import ghidra.util.layout.TwoColumnPairLayout;
 import ghidra.util.task.TaskMonitor;
 
@@ -40,6 +45,7 @@ import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.label.GDLabel;
 import docking.widgets.table.TableSortState;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressRange;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeConflictHandler;
@@ -49,6 +55,7 @@ import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
 
@@ -392,7 +399,10 @@ public class HashDB extends GhidraScript {
 					try {
 						return resolveHashes(hashLocations, taskMonitor);
 					} catch (Exception e) {
-						println(String.format("[HashDB] exception during resolution: %s\n", e.toString()));
+						StringWriter sw = new StringWriter();
+						PrintWriter pw = new PrintWriter(sw);
+						e.printStackTrace(pw);
+						println(String.format("[HashDB] exception during resolution: %s\n", sw.toString()));
 						return "unexpected error during resolution, see log";
 					}
 				}
@@ -530,10 +540,6 @@ public class HashDB extends GhidraScript {
 			return new JPanel(new BorderLayout());
 		}
 
-		protected JComponent addScanMemoryPanel() {
-			return new JPanel(new BorderLayout());
-		}
-		
 		protected JComponent addScanFunctionPanel() {
 			return new JPanel(new BorderLayout());
 		}
@@ -544,9 +550,13 @@ public class HashDB extends GhidraScript {
 			McPane.addTab("Query Settings", addQuerySettingsPanel());
 			McPane.addTab("Output Settings", addOutputSettingsPanel());
 			McPane.addTab("Edit Table", addEditTablePanel());
-			McPane.addTab("Scan Memory", addScanMemoryPanel());
 			McPane.addTab("Scan Function", addScanFunctionPanel());
 			hauptPanele.add(McPane, BorderLayout.SOUTH);
+		}
+
+		public void setTransformationNotInvertible() {
+			transformationIsNotInvertibleCheckbox.setSelected(true);
+			enableComponentsAccordingToState(getCurrentState());
 		}
 	}
 
@@ -569,25 +579,29 @@ public class HashDB extends GhidraScript {
 		state.getTool().showDialog(dialog);
 	}
 
-	private boolean addHash(long hash) {
-		HashLocation newRow = new HashLocation(currentAddress, hash);
+	private boolean addHash(Address address, long hash) {
+		HashLocation newRow = new HashLocation(address, hash);
 		dialog.add(newRow);
 		return true;
 	}
 
-	public void run() throws Exception {
-		boolean autoResolveNewHashes = false;
-		long hash;
-		try {
-			hash = getSelectedHash();
-		} catch (Exception e) {
-			println(String.format("[HashDB] Error: %s", e.getMessage()));
-			return;
-		}
+	public void run() throws Exception {	
 		showDialog();
-		if (addHash(hash) && autoResolveNewHashes) {
-			println(String.format("[HashDB] Querying hash 0x%08x", hash));
-			dialog.okCallback();
+		if (currentSelection != null) {
+			for (AddressRange addressRange : currentSelection.getAddressRanges(true)) {
+				for (Address address : addressRange) {
+					try {
+						addHash(address, getHashAt(address));
+					} catch (NotFoundException e) {}
+				}
+			}
+		} else {
+			try {
+				addHash(currentAddress, getSelectedHash());
+			} catch (Exception e) {
+				println(String.format("[HashDB] Error: %s", e.getMessage()));
+				return;
+			}
 		}
 	}
 
@@ -613,7 +627,12 @@ public class HashDB extends GhidraScript {
 			if (dialog.isTransformationInvertible()) {
 				long inverse = invertHashTransformation(hashes[k]);
 				if (inverse != baseHash) {
-					throw new IllegalArgumentException(String.format("inverse invalid for hash 0x%08X", baseHash));
+					if (!dialog.resolveEntireModules()) {
+						dialog.setTransformationNotInvertible();
+						println("[HashDB] You lied. This transformation is not invertible. I fixed it for you.");
+					} else {
+						return String.format("Transformation could not be inverted for hash 0x%08X.", baseHash);
+					}
 				}
 			}
 			if (GUI_DEBUGGING) {
@@ -686,7 +705,7 @@ public class HashDB extends GhidraScript {
 			hl.resolution = inputHashInfo.apiName;
 
 			if (inputHashInfo.modules.length == 0) {
-				throw new IllegalStateException(String.format("No modules found for hash %s.", hl.getHashValue()));
+				println(String.format("[HashDB] No modules found for %s (hash %s)", inputHashInfo.apiName, hl.getHashValue()));
 			}
 
 			if (dialog.resolveEntireModules()) {
@@ -699,7 +718,7 @@ public class HashDB extends GhidraScript {
 					}
 				}
 			} else {
-				resolveCount += onHashResolution(hashEnumeration, inputHashInfo, invertHashTransformation(inputHashInfo.hash));
+				resolveCount += onHashResolution(hashEnumeration, inputHashInfo, hl.hashValue);
 				resolvedHashes.put(inputHashInfo.hash, inputHashInfo.apiName);
 			}
 
@@ -800,12 +819,22 @@ public class HashDB extends GhidraScript {
 		}
 	}
 
+	private long getHashAt(Address address) throws NotFoundException {
+		Data data = currentProgram.getListing().getDataAt(address);
+		if (data != null) {
+			try {
+				return data.getBigInteger(0, data.getDataType().getLength(), false).longValue();
+			} catch (MemoryAccessException e) { }
+		}
+		throw new NotFoundException();
+	}
+	
 	private long getSelectedHash() throws Exception {
 		// First try to read the value of defined or undefined data. This covers many
 		// different types of locations where the cursor could be in the data view.
-		Data data = currentProgram.getListing().getDataAt(currentLocation.getAddress());
-		if (data != null)
-			return data.getBigInteger(0, data.getDataType().getLength(), false).longValue();
+		try {
+			return getHashAt(currentLocation.getAddress());
+		} catch (NotFoundException e) {}
 		if (currentLocation instanceof DecompilerLocation) {
 			Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
 			if (varNode == null || !varNode.isConstant())
