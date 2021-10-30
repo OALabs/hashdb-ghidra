@@ -109,8 +109,9 @@ public class HashDB extends GhidraScript {
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
+				if (!stringInfo.get("is_api").getAsBoolean())
+					continue;
 				JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
-
 				String[] modules = new String[modulesArray.size()];
 				for (int i = 0; i < modules.length; i++) {
 					modules[i] = modulesArray.get(i).getAsString();
