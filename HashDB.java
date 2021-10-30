@@ -234,7 +234,7 @@ public class HashDB extends GhidraScript {
 				return null;
 			return currentText.trim();
 		}
-		
+
 		private void addToComboBox(JComboBox<String> box, String value, boolean selectIt) {
 			boolean exists = false;
 			if (value == null)
@@ -252,7 +252,7 @@ public class HashDB extends GhidraScript {
 			if (selectIt)
 				box.setSelectedItem(value);
 		}
-		
+
 		public void addNewPermutation(String permutation, boolean selectIt) {
 			addToComboBox(permutationField, permutation, selectIt);
 		}
@@ -260,7 +260,7 @@ public class HashDB extends GhidraScript {
 		public String getCurrentPermutation() {
 			return getComboBoxValue(permutationField);
 		}
-	
+
 		public void addNewHashAlgorithm(String algorithm, boolean selectIt) {
 			addToComboBox(hashAlgorithmField, algorithm, selectIt);
 		}
@@ -268,7 +268,7 @@ public class HashDB extends GhidraScript {
 		public String getCurrentHashAlgorithm() {
 			return getComboBoxValue(hashAlgorithmField);
 		}
-		
+
 		public String getTransformation() {
 			return transformationTextField.getEditor().getItem().toString();
 		}
@@ -286,12 +286,11 @@ public class HashDB extends GhidraScript {
 			TaskMonitor tm = getTaskMonitorComponent();
 			if (getSelectedRows().length == 0)
 				selectRows(IntStream.range(0, getRowCount()).toArray());
-			ArrayList<HashLocation> hashes = getSelectedRowObjects()
-					.stream().map(a -> (HashLocation) a)
+			ArrayList<HashLocation> hashes = getSelectedRowObjects().stream().map(a -> (HashLocation) a)
 					.collect(Collectors.toCollection(ArrayList::new));
 			tm.initialize(hashes.size());
 			showProgressBar("Querying HashDB", true, false, 0);
-			
+
 			final class Resolver extends SwingWorker<String, Object> {
 
 				private final TaskMonitor taskMonitor;
@@ -318,7 +317,7 @@ public class HashDB extends GhidraScript {
 					try {
 						resultText = get();
 					} catch (InterruptedException | ExecutionException e) {
-						resultText =  "unknown error during execution";
+						resultText = "unknown error during execution";
 					}
 					clearSelection();
 					selectRows();
@@ -326,15 +325,15 @@ public class HashDB extends GhidraScript {
 					setStatusText(resultText);
 				}
 			}
-				
+
 			Resolver resolver = new Resolver(hashes, tm);
 			resolver.execute();
 		}
-		
+
 		public void parentOkCallback() {
 			super.okCallback();
 		}
-		
+
 		protected void addWorkPanel(JComponent hauptPanele) {
 			int rowCount = 5;
 			super.addWorkPanel(hauptPanele);
@@ -355,7 +354,7 @@ public class HashDB extends GhidraScript {
 			transformationTextField.addItem("X /* Unaltered Hash Value */");
 			transformationTextField.addItem("X ^ 0xBAADF00D /* XOR */");
 			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xADB9) & 0x1FFFFF /*REvil*/");
-			transformationTextField.setSelectedIndex(0);			
+			transformationTextField.setSelectedIndex(0);
 			rightPanel.add(transformationTextField);
 
 			leftPanel.add(new GDLabel("Hash Algorithm"));
@@ -366,11 +365,11 @@ public class HashDB extends GhidraScript {
 			leftPanel.add(new GDLabel("String Permutation"));
 			permutationField = new JComboBox<>();
 			rightPanel.add(permutationField);
-			
+
 			leftPanel.add(new GDLabel(""));
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
 			rightPanel.add(resolveModulesCheckbox);
-			
+
 			JPanel outerPanel = new JPanel(new BorderLayout());
 			outerPanel.add(columnPanel, BorderLayout.NORTH);
 
@@ -418,18 +417,13 @@ public class HashDB extends GhidraScript {
 			return 1;
 		} catch (IllegalArgumentException e) {
 			if (GUI_DEBUGGING) {
-				println(
-					String.format("[HashDB] could not add %s (%s) to %s: %s",
-						hashInfo.apiName,
-						hl.getHashValue(),
-						hashEnumeration.getDisplayName(),
-						e.toString()
-				));
+				println(String.format("[HashDB] could not add %s (%s) to %s: %s", hashInfo.apiName, hl.getHashValue(),
+						hashEnumeration.getDisplayName(), e.toString()));
 			}
 			return 0;
 		}
 	}
-	
+
 	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
 		HashDBApi api = new HashDBApi();
 		long[] hashes = new long[hashLocations.size()];
@@ -443,7 +437,7 @@ public class HashDB extends GhidraScript {
 		long taskTotal = tm.getMaximum();
 		String algorithm = dialog.getCurrentHashAlgorithm();
 		String permutation = dialog.getCurrentPermutation();
-		
+
 		if (algorithm == null) {
 			long taskHunt = taskTotal / 2;
 			if (taskHunt < 1) {
@@ -459,13 +453,13 @@ public class HashDB extends GhidraScript {
 				algorithm = algorithms.iterator().next();
 				dialog.addNewHashAlgorithm(algorithm, true);
 			} else {
-				for (String a: algorithms)
-					dialog.addNewHashAlgorithm(a, false);	
-				return "please select an algorithm";				
+				for (String a : algorithms)
+					dialog.addNewHashAlgorithm(a, false);
+				return "please select an algorithm";
 			}
 			tm.incrementProgress(taskHunt);
 		}
-		
+
 		tm.setMessage(String.format("resolving hashes for algorithm %s", algorithm));
 
 		int resolveCount = 0;
@@ -474,7 +468,7 @@ public class HashDB extends GhidraScript {
 		DataTypeManager dataTypeManager = getCurrentProgram().getDataTypeManager();
 		DataType existingDataType = dataTypeManager.getDataType(new DataTypePath("/HashDB", dialog.getEnumName()));
 		EnumDataType hashEnumeration = null;
-		
+
 		if (existingDataType == null) {
 			hashEnumeration = new EnumDataType(new CategoryPath("/HashDB"), hashEnumName, 4);
 		} else {
@@ -502,7 +496,8 @@ public class HashDB extends GhidraScript {
 			}
 			if (dialog.resolveEntireModules()) {
 				for (String module : inputHashInfo.modules) {
-					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
+					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
+							inputHashInfo.permutation)) {
 						resolveCount += onHashResolution(hashEnumeration, hl, hashInfo);
 					}
 				}
@@ -517,8 +512,8 @@ public class HashDB extends GhidraScript {
 		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashEnumName));
 		dataTypeManager.addDataType(hashEnumeration, DataTypeConflictHandler.REPLACE_HANDLER);
 		currentProgram.endTransaction(id, true);
-		return String.format("Added %d enum values to %s. %s",
-				resolveCount, hashEnumeration.getDisplayName(), remark).trim();
+		return String.format("Added %d enum values to %s. %s", resolveCount, hashEnumeration.getDisplayName(), remark)
+				.trim();
 	}
 
 	private long transformHash(long hash, String transformation) throws ScriptException {
@@ -588,7 +583,7 @@ public class HashDB extends GhidraScript {
 		public long getHashAsLong() {
 			return hashValue;
 		}
-		
+
 		public String getHashValue() {
 			return String.format("%08x", hashValue);
 		}
