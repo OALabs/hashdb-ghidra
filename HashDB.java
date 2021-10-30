@@ -35,8 +35,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import docking.widgets.button.GRadioButton;
 import docking.widgets.checkbox.GCheckBox;
 import docking.widgets.label.GDLabel;
+import docking.widgets.table.TableSortState;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
@@ -60,12 +62,15 @@ import javax.net.ssl.SSLContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
+import javax.swing.ButtonGroup;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingWorker;
+import javax.swing.border.EmptyBorder;
 
 public class HashDB extends GhidraScript {
 	boolean HTTP_DEBUGGING = false;
@@ -226,12 +231,21 @@ public class HashDB extends GhidraScript {
 		private GCheckBox transformationIsSelfInverseCheckbox;
 		private GCheckBox transformationIsNotInvertibleCheckbox;
 
+		private JRadioButton outputStructRadio;
+		private JRadioButton outputEnumRadio;
+
 		public HashTable(PluginTool tool, TableChooserExecutor executor, Program program, String title) {
 			super(tool, executor, program, title, null, false);
 			setFocusComponent(okButton);
 			okButton.setMnemonic('Q');
 		}
 
+		@Override
+		public void show() {
+			super.show();
+			setSortState(TableSortState.createUnsortedSortState());
+		}
+		
 		@Override
 		protected void setOkEnabled(boolean state) {
 			return;
@@ -415,6 +429,7 @@ public class HashDB extends GhidraScript {
 				left = new JPanel(new GridLayout(rowCount, 1));
 				right = new JPanel(new GridLayout(rowCount, 1));
 				main = new JPanel(new BorderLayout());
+				main.setBorder(new EmptyBorder(5, 2, 0, 2));
 				JPanel topAlignedContents = new JPanel(new BorderLayout(10, 10));
 				main.add(topAlignedContents, BorderLayout.NORTH);				
 				topAlignedContents.add(left, BorderLayout.WEST);
@@ -437,7 +452,7 @@ public class HashDB extends GhidraScript {
 		}
 		
 		protected JComponent addQuerySettingsPanel() {
-			TwoColumnPanel tc = new TwoColumnPanel(8);
+			TwoColumnPanel tc = new TwoColumnPanel(7);
 			
 			transformationTextField = new JComboBox<>();
 			transformationTextField.setEditable(true);
@@ -486,13 +501,32 @@ public class HashDB extends GhidraScript {
 		}
 		
 		protected JComponent addOutputSettingsPanel() {
-			TwoColumnPanel tc = new TwoColumnPanel(1);
+			TwoColumnPanel tc = new TwoColumnPanel(3);
+			JPanel radioPanel = new JPanel(new BorderLayout(10, 0));
+			
 			enumNameTextField = new JTextField("HashDBEnum");
-			tc.addRow("Enum Name:", enumNameTextField);
+			tc.addRow("Data Type Name:", enumNameTextField);
+
+			outputStructRadio = new JRadioButton("Generate Struct");
+			outputStructRadio.setToolTipText(
+				"The entries of the struct will have the same order as the items in the above table."
+				+ " They will be named according to the resolved API symbols, or generically when no"
+				+ " resolution was possible."
+			);
+			outputEnumRadio = new JRadioButton("Generate Enum");
+			outputEnumRadio.setSelected(true);
+			ButtonGroup group = new ButtonGroup();
+			group.add(outputEnumRadio);
+			group.add(outputStructRadio);
+			radioPanel.add(outputEnumRadio, BorderLayout.WEST);
+			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
+			tc.addRow(radioPanel);
+
 			return tc.getMain();
 		}
 
 		protected JComponent addEditTablePanel() {
+			//TwoColumnPanel tc = new TwoColumnPanel(2);
 			return new JPanel(new BorderLayout());
 		}
 
