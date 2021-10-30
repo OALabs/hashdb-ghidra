@@ -373,7 +373,7 @@ public class HashDB extends GhidraScript {
 	private int onHashResolution(EnumDataType hashEnumeration, HashLocation hl, HashDB.HashDBApi.HashInfo hashInfo) {
 		hl.resolution = hashInfo.apiName;
 		try {
-			hashEnumeration.add(hashInfo.apiName, hashInfo.hash);
+			hashEnumeration.add(hashInfo.apiName, hl.getHashAsLong());
 			return 1;
 		} catch (IllegalArgumentException e) {
 			if (GUI_DEBUGGING) {
@@ -433,8 +433,9 @@ public class HashDB extends GhidraScript {
 			hashEnumeration = (EnumDataType) existingDataType.copy(dataTypeManager);
 		}
 
-		for (HashLocation hl: hashLocations) {
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hl.getHashAsLong());
+		for (int k = 0; k < hashes.length; k++) {
+			HashLocation hl = hashLocations.get(k);
+			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashes[k]);
 			if (resolved.size() == 0) {
 				continue;
 			} else if (resolved.size() > 1) {
