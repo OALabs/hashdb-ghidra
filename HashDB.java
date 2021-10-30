@@ -406,9 +406,9 @@ public class HashDB extends GhidraScript {
 		}
 
 		private class TwoColumnPanel {
-			public JComponent left;
-			public JComponent right;
-			public JComponent main;
+			private JComponent left;
+			private JComponent right;
+			private JComponent main;
 			
 			public TwoColumnPanel(int rowCount) {
 				left = new JPanel(new GridLayout(rowCount, 1));
@@ -417,23 +417,35 @@ public class HashDB extends GhidraScript {
 				main.add(left, BorderLayout.WEST);
 				main.add(right, BorderLayout.CENTER);
 			}
+			
+			public JComponent getMain() {
+				return main;
+			}
+
+			public void addRow(JComponent component) {
+				left.add(new GDLabel());
+				right.add(component);
+			}
+
+			public void addRow(String label, JComponent component) {
+				left.add(new GDLabel(label));
+				right.add(component);
+			}
 		}
 		
 		protected JComponent addQuerySettingsPanel() {
 			TwoColumnPanel tc = new TwoColumnPanel(8);
 			
-			tc.left.add(new GDLabel("Enum Name:"));
 			enumNameTextField = new JTextField("HashDBEnum");
-			tc.right.add(enumNameTextField);
+			tc.addRow("Enum Name:", enumNameTextField);
 
-			tc.left.add(new GDLabel("Hash Transformation:"));
 			transformationTextField = new JComboBox<>();
 			transformationTextField.setEditable(true);
 			transformationTextField.addItem("X /* Unaltered Hash Value */");
 			transformationTextField.addItem("X ^ 0xBAADF00D /* XOR */");
 			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xAFB9) & 0x1FFFFF /*REvil*/");
 			transformationTextField.setSelectedIndex(0);
-			tc.right.add(transformationTextField);
+			tc.addRow("Hash Transformation:", transformationTextField);
 			
 			final class UpdateButtons implements ActionListener {
 				@Override
@@ -444,37 +456,31 @@ public class HashDB extends GhidraScript {
 			
 			UpdateButtons updateButtons = new UpdateButtons();
 			
-			tc.left.add(new GDLabel());
 			transformationIsSelfInverseCheckbox = new GCheckBox("Transformation Is Self-Inverse");
 			transformationIsSelfInverseCheckbox.addActionListener(updateButtons);
-			tc.right.add(transformationIsSelfInverseCheckbox);
+			tc.addRow(transformationIsSelfInverseCheckbox);
 
-			tc.left.add(new GDLabel());
 			transformationIsNotInvertibleCheckbox = new GCheckBox("Transformation Not Invertible");
 			transformationIsNotInvertibleCheckbox.addActionListener(updateButtons);			
-			tc.right.add(transformationIsNotInvertibleCheckbox);
+			tc.addRow(transformationIsNotInvertibleCheckbox);
 
-			tc.left.add(new GDLabel("Transformation Inverse:"));
 			transformationInverseTextField = new JTextField();
-			tc.right.add(transformationInverseTextField);
+			tc.addRow("Transformation Inverse:", transformationInverseTextField);
 
-			tc.left.add(new GDLabel("Hash Algorithm:"));
 			hashAlgorithmField = new JComboBox<>();
 			hashAlgorithmField.setEditable(true);
-			tc.right.add(hashAlgorithmField);
+			tc.addRow("Hash Algorithm:", hashAlgorithmField);
 
-			tc.left.add(new GDLabel("String Permutation:"));
 			permutationField = new JComboBox<>();
 			permutationField.addItem("");
 			permutationField.setSelectedIndex(0);
-			tc.right.add(permutationField);
+			tc.addRow("String Permutation:", permutationField);
 
-			tc.left.add(new GDLabel());
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
-			tc.right.add(resolveModulesCheckbox);
+			tc.addRow(resolveModulesCheckbox);
 
 			JPanel outerPanel = new JPanel(new BorderLayout());
-			outerPanel.add(tc.main, BorderLayout.NORTH);
+			outerPanel.add(tc.getMain(), BorderLayout.NORTH);
 			transformationIsSelfInverseCheckbox.setSelected(true);
 			updateButtons.actionPerformed(null);
 			return outerPanel;
