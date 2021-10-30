@@ -26,6 +26,7 @@ import ghidra.app.tablechooser.TableChooserExecutor;
 
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.util.OperandFieldLocation;
+import ghidra.util.layout.TwoColumnPairLayout;
 import ghidra.util.task.TaskMonitor;
 
 import com.google.gson.Gson;
@@ -479,14 +480,13 @@ public class HashDB extends GhidraScript {
 			resolveModulesCheckbox = new GCheckBox("Resolve Entire Modules");
 			tc.addRow(resolveModulesCheckbox);
 
-			JPanel outerPanel = new JPanel(new BorderLayout());
-			outerPanel.add(tc.getMain(), BorderLayout.NORTH);
 			transformationIsSelfInverseCheckbox.setSelected(true);
 			updateButtons.actionPerformed(null);
-			return outerPanel;
+			
+			return tc.getMain();
 		}
 		
-		protected JComponent addOutputSettingsPanel() {
+		protected JComponent addOutputSettingsPanel() {		
 			return new JPanel(new BorderLayout());
 		}
 
