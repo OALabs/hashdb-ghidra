@@ -62,7 +62,7 @@ import javax.swing.JTextField;
 import javax.swing.SwingWorker;
 
 public class HashDB extends GhidraScript {
-	boolean HTTP_DEBUGGING = true;
+	boolean HTTP_DEBUGGING = false;
 	boolean GUI_DEBUGGING = false;
 
 	private class HashDBApi {
