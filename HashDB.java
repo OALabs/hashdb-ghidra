@@ -80,6 +80,7 @@ import javax.swing.border.EmptyBorder;
 public class HashDB extends GhidraScript {
 	boolean HTTP_DEBUGGING = false;
 	boolean GUI_DEBUGGING = false;
+	boolean JS_DEBUGGING = false;
 
 	static String getStackTraceAsString(Exception e) {
 		StringWriter sw = new StringWriter();
@@ -829,7 +830,9 @@ public class HashDB extends GhidraScript {
 		if (result < 0) {
 			result = 0xFFFFFFFFL - ~result;
 		}
-		println(String.format("%d became %d", hash, result));
+		if (JS_DEBUGGING) {
+			println(String.format("%d became %d", hash, result));			
+		}		
 		return result;
 	}
 
