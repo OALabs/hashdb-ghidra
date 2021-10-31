@@ -570,8 +570,8 @@ public class HashDB extends GhidraScript {
 
 		protected JComponent addEditTablePanel() {
 			JTextField manualHash = new JTextField();
-			JButton button = new JButton("Add Hash");
-			button.addActionListener(new ActionListener() {
+			JButton addHashButton = new JButton("Add Hash");
+			addHashButton.addActionListener(new ActionListener() {
 				@Override
 				public void actionPerformed(ActionEvent event) {
 					try {
@@ -582,11 +582,28 @@ public class HashDB extends GhidraScript {
 					}
 				}
 			});
+			JButton deleteSelectionButton = new JButton("Remove Selection");
+			deleteSelectionButton.addActionListener(new ActionListener() {
+				@Override
+				public void actionPerformed(ActionEvent event) {
+					for (AddressableRowObject row : dialog.getSelectedRowObjects()) {
+						remove(row);
+					}
+				}
+			});
 
-			JPanel topAlignedContents = new JPanel(new BorderLayout(10, 10));
-			topAlignedContents.add(new GDLabel("Hash"), BorderLayout.WEST);
-			topAlignedContents.add(manualHash, BorderLayout.CENTER);
-			topAlignedContents.add(button, BorderLayout.EAST);
+			JPanel firstRow = new JPanel(new BorderLayout(10, 10));
+			firstRow.add(new GDLabel("Hash"), BorderLayout.WEST);
+			firstRow.add(manualHash, BorderLayout.CENTER);
+			firstRow.add(addHashButton, BorderLayout.EAST);
+
+			JPanel secondRow = new JPanel(new BorderLayout(10, 10));
+			secondRow.add(deleteSelectionButton, BorderLayout.EAST);
+
+			int rowCount = 2;
+			JPanel topAlignedContents = new JPanel(new GridLayout(rowCount, 1));
+			topAlignedContents.add(firstRow);
+			topAlignedContents.add(secondRow);
 
 			JPanel main = new JPanel(new BorderLayout());
 			main.setBorder(new EmptyBorder(5, 2, 0, 2));
