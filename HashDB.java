@@ -573,9 +573,13 @@ public class HashDB extends GhidraScript {
 			JButton button = new JButton("Add Hash");
 			button.addActionListener(new ActionListener() {
 				@Override
-				public void actionPerformed(ActionEvent e) {
-					int hash = parseHash(manualHash.getText());
-					addHash(currentAddress, hash);
+				public void actionPerformed(ActionEvent event) {
+					try {
+						int hash = parseHash(manualHash.getText());
+						addHash(currentAddress, hash);
+					} catch (Exception e) {
+						println(String.format("[HashDB] %s", e.getMessage()));
+					}
 				}
 			});
 
@@ -625,9 +629,20 @@ public class HashDB extends GhidraScript {
 		state.getTool().showDialog(dialog);
 	}
 
-	private int parseHash(String input) {
-		if (input.startsWith("0x")) {
+	private int parseHash(String input) throws Exception {
+		if (input.length() == 0) {
+			throw new Exception(String.format("Invalid input: %s (zero length)", input));
+		}
+		boolean endsInH = input.endsWith("h");
+		boolean startsWith0x = input.startsWith("0x");
+		if (endsInH) {
+			input = input.substring(0, input.length() - 1);
+		}
+		if (startsWith0x) {
 			return Integer.parseInt(input.substring(2), 16);
+		}
+		if (endsInH) {
+			return Integer.parseInt(input, 16);
 		}
 		return Integer.parseInt(input, 10);
 	}
@@ -865,8 +880,8 @@ public class HashDB extends GhidraScript {
 			result = 0xFFFFFFFFL - ~result;
 		}
 		if (JS_DEBUGGING) {
-			println(String.format("%d became %d", hash, result));			
-		}		
+			println(String.format("%d became %d", hash, result));
+		}
 		return result;
 	}
 
