@@ -441,11 +441,20 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void waitAndClearSelection() {
+			long maxWaitCount = 100;
 			while (dialog.isBusy()) {
 				try {
 					Thread.sleep(10);
 				} catch (Exception e) {
+					println(String.format(getStackTraceAsString(e)));
 				}
+				if (maxWaitCount == 0) {
+					if (GUI_DEBUGGING) {
+						println("waitAndClearSelection ran into timeout");
+					}
+					break;
+				}
+				maxWaitCount--;
 			}
 			clearSelection();
 		}
