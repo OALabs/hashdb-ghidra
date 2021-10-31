@@ -442,7 +442,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void waitAndClearSelection() {
-			long maxWaitCount = 100;
+			long maxWaitCount = 10;
 			while (dialog.isBusy()) {
 				try {
 					Thread.sleep(10);
