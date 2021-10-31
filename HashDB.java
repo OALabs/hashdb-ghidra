@@ -575,8 +575,7 @@ public class HashDB extends GhidraScript {
 				@Override
 				public void actionPerformed(ActionEvent event) {
 					try {
-						int hash = parseHash(manualHash.getText());
-						addHash(currentAddress, hash);
+						addHash(currentAddress, parseHash(manualHash.getText()));
 					} catch (Exception e) {
 						println(String.format("[HashDB] %s", e.getMessage()));
 					}
@@ -646,7 +645,7 @@ public class HashDB extends GhidraScript {
 		state.getTool().showDialog(dialog);
 	}
 
-	private int parseHash(String input) throws Exception {
+	private long parseHash(String input) throws Exception {
 		if (input.length() == 0) {
 			throw new Exception(String.format("Invalid input: %s (zero length)", input));
 		}
@@ -656,12 +655,12 @@ public class HashDB extends GhidraScript {
 			input = input.substring(0, input.length() - 1);
 		}
 		if (startsWith0x) {
-			return Integer.parseInt(input.substring(2), 16);
+			return Long.parseLong(input.substring(2), 16);
 		}
 		if (endsInH) {
-			return Integer.parseInt(input, 16);
+			return Long.parseLong(input, 16);
 		}
-		return Integer.parseInt(input, 10);
+		return Long.parseLong(input, 10);
 	}
 
 	private boolean addHash(Address address, long hash) {
