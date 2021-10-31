@@ -134,15 +134,22 @@ public class HashDB extends GhidraScript {
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
-				if (!stringInfo.get("is_api").getAsBoolean())
-					continue;
+				if (!stringInfo.get("is_api").getAsBoolean()) {
+					switch (dialog.getNoneApiStrategy()) {
+					case Ignore:
+						continue;
+					case Merge:
+						println("None-API strategy not implemented yet");
+						continue;
+					case Separate:
+						println("None-API strategy not implemented yet");
+						continue;
+					}
+				}
 				JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
 				String[] modules = new String[modulesArray.size()];
 				for (int i = 0; i < modules.length; i++) {
 					modules[i] = modulesArray.get(i).getAsString();
-				}
-				if (!stringInfo.get("is_api").getAsBoolean()) {
-					continue;
 				}
 				ret.add(new HashInfo(hashObject.get("hash").getAsLong(), stringInfo.get("api").getAsString(),
 						stringInfo.get("permutation").getAsString(), modules));
@@ -228,16 +235,32 @@ public class HashDB extends GhidraScript {
 
 	}
 
-	public enum GuiState {
-		TransformationNotInvertible, TransformationSelfInverse, TransformationInverseManual
+	public enum TransformInvertibility {
+		NotInvertible, SelfInverse, Manual
+	}
+
+	public class GuiState {
+		public TransformInvertibility transformInvertibility;
+		public boolean storeNoneApiInSeparateEnum;
+
+		public GuiState(TransformInvertibility transformInvertibility, boolean storeNoneApiInSeparateEnum) {
+			this.transformInvertibility = transformInvertibility;
+			this.storeNoneApiInSeparateEnum = storeNoneApiInSeparateEnum;
+		}
 	}
 
 	public enum OutputMethod {
 		Enum, Struct
 	}
 
+	public enum NoneApiStrategy {
+		Ignore, Merge, Separate
+	}
+
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
+		private JComboBox<String> noneApiStrategyComboBox;
+		private JTextField secondEnumNameTextField;
 		private JTextField transformationInverseTextField;
 		private JComboBox<String> transformationTextField;
 		private JComboBox<String> hashAlgorithmField;
@@ -265,6 +288,25 @@ public class HashDB extends GhidraScript {
 		@Override
 		protected void setOkEnabled(boolean state) {
 			return;
+		}
+
+		public NoneApiStrategy getNoneApiStrategy() throws IllegalStateException {
+			if (noneApiStrategyComboBox == null) {
+				return NoneApiStrategy.Ignore;
+			}
+			String noneApiStrategy = getComboBoxValue(noneApiStrategyComboBox);
+			if (noneApiStrategy == null) {
+				return NoneApiStrategy.Ignore;
+			}
+			if (noneApiStrategy.contentEquals("Ignore")) {
+				return NoneApiStrategy.Ignore;
+			} else if (noneApiStrategy.contentEquals("Add to same enum/struct")) {
+				return NoneApiStrategy.Merge;
+			} else if (noneApiStrategy.contentEquals("Collect in second enum")) {
+				return NoneApiStrategy.Separate;
+			} else {
+				throw new IllegalStateException();
+			}
 		}
 
 		public OutputMethod getOutputMethod() throws IllegalStateException {
@@ -352,31 +394,35 @@ public class HashDB extends GhidraScript {
 		}
 
 		public GuiState getCurrentState() {
+			boolean storeNoneApiInSeparateEnum = getNoneApiStrategy() == NoneApiStrategy.Separate;
 			if (transformationIsNotInvertibleCheckbox.isSelected())
-				return GuiState.TransformationNotInvertible;
+				return new GuiState(TransformInvertibility.NotInvertible, storeNoneApiInSeparateEnum);
 			if (transformationIsSelfInverseCheckbox.isSelected())
-				return GuiState.TransformationSelfInverse;
-			return GuiState.TransformationInverseManual;
+				return new GuiState(TransformInvertibility.SelfInverse, storeNoneApiInSeparateEnum);
+			return new GuiState(TransformInvertibility.Manual, storeNoneApiInSeparateEnum);
 		}
 
 		public void enableComponentsAccordingToState(GuiState guiState) {
-			switch (guiState) {
-			case TransformationInverseManual:
+			switch (guiState.transformInvertibility) {
+			case Manual:
 				transformationInverseTextField.setEnabled(true);
 				resolveModulesCheckbox.setEnabled(true);
 				transformationIsSelfInverseCheckbox.setEnabled(true);
 				break;
-			case TransformationNotInvertible:
+			case NotInvertible:
 				transformationInverseTextField.setEnabled(false);
 				resolveModulesCheckbox.setEnabled(false);
 				transformationIsSelfInverseCheckbox.setEnabled(false);
 				resolveModulesCheckbox.setSelected(false);
 				break;
-			case TransformationSelfInverse:
+			case SelfInverse:
 				transformationInverseTextField.setEnabled(false);
 				resolveModulesCheckbox.setEnabled(true);
 				transformationIsSelfInverseCheckbox.setEnabled(true);
 				break;
+			}
+			if (secondEnumNameTextField != null) {
+				secondEnumNameTextField.setEnabled(guiState.storeNoneApiInSeparateEnum);
 			}
 		}
 
@@ -545,10 +591,11 @@ public class HashDB extends GhidraScript {
 		}
 
 		protected JComponent addOutputSettingsPanel() {
-			TwoColumnPanel tc = new TwoColumnPanel(3);
+			int rowCount = 4;
+			TwoColumnPanel tc = new TwoColumnPanel(rowCount);
 			JPanel radioPanel = new JPanel(new BorderLayout(10, 0));
 
-			enumNameTextField = new JTextField("HashDBEnum");
+			enumNameTextField = new JTextField("HashDB");
 			tc.addRow("Data Type Name:", enumNameTextField);
 
 			outputStructRadio = new JRadioButton("Generate Struct");
@@ -564,6 +611,17 @@ public class HashDB extends GhidraScript {
 			radioPanel.add(outputEnumRadio, BorderLayout.WEST);
 			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
 			tc.addRow(radioPanel);
+			String[] strategyNames = { "Ignore", "Add to same enum/struct", "Collect in second enum" };
+			noneApiStrategyComboBox = new JComboBox<String>(strategyNames);
+			noneApiStrategyComboBox.setSelectedItem("Ignore");
+			tc.addRow("What to do with none-API responses", noneApiStrategyComboBox);
+			noneApiStrategyComboBox.addActionListener(new ActionListener() {
+				public void actionPerformed(ActionEvent e) {
+					enableComponentsAccordingToState(getCurrentState());
+				}
+			});
+			secondEnumNameTextField = new JTextField("HashDBStrings");
+			tc.addRow("Name of separate enum", secondEnumNameTextField);
 
 			return tc.getMain();
 		}
@@ -622,6 +680,7 @@ public class HashDB extends GhidraScript {
 			McPane.addTab("Edit Table", addEditTablePanel());
 			McPane.addTab("Scan Function", addScanFunctionPanel());
 			hauptPanele.add(McPane, BorderLayout.SOUTH);
+			enableComponentsAccordingToState(getCurrentState());
 		}
 
 		public void setTransformationNotInvertible() {
