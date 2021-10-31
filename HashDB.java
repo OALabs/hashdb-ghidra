@@ -827,7 +827,12 @@ public class HashDB extends GhidraScript {
 		ScriptEngineManager manager = new ScriptEngineManager();
 		ScriptEngine engine = manager.getEngineByName("JavaScript");
 		engine.put("X", hash);
-		return Long.valueOf(engine.eval(transformation).toString());
+		long result = Long.valueOf(engine.eval(transformation).toString());
+		if (result < 0) {
+			result = 0xFFFFFFFFL - ~result;
+		}
+		println(String.format("%d became %d", hash, result));
+		return result;
 	}
 
 	private void configureTableColumns(TableChooserDialog dialog) {
