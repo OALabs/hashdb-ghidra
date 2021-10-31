@@ -68,6 +68,7 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import javax.swing.ButtonGroup;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
@@ -568,8 +569,25 @@ public class HashDB extends GhidraScript {
 		}
 
 		protected JComponent addEditTablePanel() {
-			// TwoColumnPanel tc = new TwoColumnPanel(2);
-			return new JPanel(new BorderLayout());
+			JTextField manualHash = new JTextField();
+			JButton button = new JButton("Add Hash");
+			button.addActionListener(new ActionListener() {
+				@Override
+				public void actionPerformed(ActionEvent e) {
+					int hash = parseHash(manualHash.getText());
+					addHash(currentAddress, hash);
+				}
+			});
+
+			JPanel topAlignedContents = new JPanel(new BorderLayout(10, 10));
+			topAlignedContents.add(new GDLabel("Hash"), BorderLayout.WEST);
+			topAlignedContents.add(manualHash, BorderLayout.CENTER);
+			topAlignedContents.add(button, BorderLayout.EAST);
+
+			JPanel main = new JPanel(new BorderLayout());
+			main.setBorder(new EmptyBorder(5, 2, 0, 2));
+			main.add(topAlignedContents, BorderLayout.NORTH);
+			return main;
 		}
 
 		protected JComponent addScanFunctionPanel() {
@@ -605,6 +623,13 @@ public class HashDB extends GhidraScript {
 		}
 
 		state.getTool().showDialog(dialog);
+	}
+
+	private int parseHash(String input) {
+		if (input.startsWith("0x")) {
+			return Integer.parseInt(input.substring(2), 16);
+		}
+		return Integer.parseInt(input, 10);
 	}
 
 	private boolean addHash(Address address, long hash) {
