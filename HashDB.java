@@ -48,10 +48,8 @@ import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
-import ghidra.program.model.data.GenericDataType;
 import ghidra.program.model.data.LongDataType;
 import ghidra.program.model.data.StructureDataType;
-import ghidra.program.model.data.StructureInternal;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
@@ -835,7 +833,7 @@ public class HashDB extends GhidraScript {
 		return result;
 	}
 
-	private void configureTableColumns(TableChooserDialog dialog) {
+	private void configureTableColumns(TableChooserDialog dialogToConfigure) {
 		StringColumnDisplay hashColumn = new StringColumnDisplay() {
 			@Override
 			public String getColumnName() {
@@ -854,7 +852,7 @@ public class HashDB extends GhidraScript {
 			}
 		};
 
-		dialog.addCustomColumn(hashColumn);
+		dialogToConfigure.addCustomColumn(hashColumn);
 		StringColumnDisplay resolutionColumn = new StringColumnDisplay() {
 			@Override
 			public String getColumnName() {
@@ -873,7 +871,7 @@ public class HashDB extends GhidraScript {
 			}
 		};
 
-		dialog.addCustomColumn(resolutionColumn);
+		dialogToConfigure.addCustomColumn(resolutionColumn);
 	}
 
 	class HashLocation implements AddressableRowObject {
