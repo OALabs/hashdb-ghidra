@@ -60,6 +60,8 @@ import ghidra.program.model.scalar.Scalar;
 import java.net.URL;
 import java.security.SecureRandom;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.ActionEvent;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -265,6 +267,7 @@ public class HashDB extends GhidraScript {
 		private JComboBox<String> transformationTextField;
 		private JComboBox<String> hashAlgorithmField;
 		private JComboBox<String> permutationField;
+		private JTextField hashAlgorithmThresholdField;
 		private GCheckBox resolveModulesCheckbox;
 
 		private GCheckBox transformationIsSelfInverseCheckbox;
@@ -391,6 +394,21 @@ public class HashDB extends GhidraScript {
 
 		public boolean resolveEntireModules() {
 			return resolveModulesCheckbox.isSelected();
+		}
+
+		public double getAlgorithmThreshold() {
+			try {
+				double threshold = Double.parseDouble(hashAlgorithmThresholdField.getText());
+				if (threshold < 0) {
+					return 0;
+				}
+				if (threshold > 1.0) {
+					return 1.0;
+				}
+				return threshold;
+			} catch (NumberFormatException exception) {
+				return 1;
+			}
 		}
 
 		public GuiState getCurrentState() {
@@ -572,9 +590,20 @@ public class HashDB extends GhidraScript {
 			transformationInverseTextField = new JTextField();
 			tc.addRow("Transformation Inverse:", transformationInverseTextField);
 
+			JPanel hashAlgorithmLine = new JPanel(new BorderLayout(10, 10));
 			hashAlgorithmField = new JComboBox<>();
 			hashAlgorithmField.setEditable(true);
-			tc.addRow("Hash Algorithm:", hashAlgorithmField);
+			hashAlgorithmLine.add(hashAlgorithmField, BorderLayout.CENTER);
+			hashAlgorithmThresholdField = new JTextField(3);
+			hashAlgorithmThresholdField.setText("1.0");
+			hashAlgorithmThresholdField.addFocusListener(new FocusAdapter() {
+				public void focusLost(FocusEvent e) {
+					hashAlgorithmThresholdField.setText(String.format("%.1f", dialog.getAlgorithmThreshold()));
+				}
+			});
+			hashAlgorithmLine.add(hashAlgorithmThresholdField, BorderLayout.EAST);
+
+			tc.addRow("Hash Algorithm:", hashAlgorithmLine);
 
 			permutationField = new JComboBox<>();
 			permutationField.addItem("");
