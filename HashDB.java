@@ -104,13 +104,16 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		private ArrayList<String> hunt(long[] hashes) throws Exception {
+		private ArrayList<String> hunt(long[] hashes, double minimumHitcount) throws Exception {
 			ArrayList<String> ret = new ArrayList<String>();
 			JsonObject response = JsonParser
 					.parseString(httpQuery("POST", "hunt", new Gson().toJson(new Hashes(hashes)).getBytes()))
 					.getAsJsonObject();
 			for (JsonElement hit : response.get("hits").getAsJsonArray()) {
-				ret.add(hit.getAsJsonObject().get("algorithm").getAsString());
+				JsonObject row = hit.getAsJsonObject();
+				if (minimumHitcount <= row.get("hitrate").getAsDouble()) {
+					ret.add(row.get("algorithm").getAsString());
+				}
 			}
 
 			return ret;
@@ -885,7 +888,7 @@ public class HashDB extends GhidraScript {
 			taskTotal += taskHunt;
 			tm.setMaximum(taskTotal);
 			tm.setMessage("guessing hash function");
-			ArrayList<String> algorithms = api.hunt(hashes);
+			ArrayList<String> algorithms = api.hunt(hashes, dialog.getAlgorithmThreshold());
 			if (algorithms.size() == 0) {
 				return "could not identify any hashing algorithms";
 			} else if (algorithms.size() == 1) {
