@@ -942,14 +942,40 @@ public class HashDB extends GhidraScript {
 		}
 	}
 
+	private enum HashResolutionResultType {
+		RESOLVED,
+		NO_MATCHES_FOUND,
+		HASH_COLLISION,
+		NOT_AN_API_RESULT
+	}
+	
+	private class HashResolutionResult {
+		public HashDB.HashDBApi.HashInfo hashInfo;
+		public long baseHash;
+		public HashResolutionResultType type;
+
+		
+		HashResolutionResult(HashResolutionResultType type, long baseHash) {
+			this.type = type;
+			this.baseHash = baseHash;
+			this.hashInfo = null;
+		}
+		
+		HashResolutionResult(HashResolutionResultType type, long baseHash, HashDB.HashDBApi.HashInfo hashInfo) {
+			this.type = type;
+			this.baseHash = baseHash;
+			this.hashInfo = hashInfo;
+		}
+	}
+	
 	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
 		HashDBApi api = new HashDBApi();
-		long[] hashes = new long[hashLocations.size()];
+		long[] transformedHashes = new long[hashLocations.size()];
 		for (int k = 0; k < hashLocations.size(); k++) {
 			long baseHash = hashLocations.get(k).getHashAsLong();
-			hashes[k] = transformHash(baseHash);
+			transformedHashes[k] = transformHash(baseHash);
 			if (dialog.isTransformationInvertible()) {
-				long inverse = invertHashTransformation(hashes[k]);
+				long inverse = invertHashTransformation(transformedHashes[k]);
 				if (inverse != baseHash) {
 					if (!dialog.resolveEntireModules()) {
 						dialog.setTransformationNotInvertible();
@@ -960,7 +986,7 @@ public class HashDB extends GhidraScript {
 				}
 			}
 			if (GUI_DEBUGGING) {
-				println(String.format("[HashDB] Translated hash for 0x%08X is 0x%08X.", baseHash, hashes[k]));
+				println(String.format("[HashDB] Translated hash for 0x%08X is 0x%08X.", baseHash, transformedHashes[k]));
 			}
 		}
 		long taskTotal = tm.getMaximum();
@@ -975,7 +1001,7 @@ public class HashDB extends GhidraScript {
 			taskTotal += taskHunt;
 			tm.setMaximum(taskTotal);
 			tm.setMessage("guessing hash function");
-			ArrayList<String> algorithms = api.hunt(hashes, dialog.getAlgorithmThreshold());
+			ArrayList<String> algorithms = api.hunt(transformedHashes, dialog.getAlgorithmThreshold());
 			if (algorithms.size() == 0) {
 				return "could not identify any hashing algorithms";
 			} else if (algorithms.size() == 1) {
@@ -993,60 +1019,82 @@ public class HashDB extends GhidraScript {
 		String hashStorageName = dialog.getStorageName();
 		String remark = "";
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
-		Map<Long, String> resolvedHashes = new HashMap<Long, String>();
+		Map<Long, HashResolutionResult> resolvedHashes = new HashMap<Long, HashResolutionResult>();
 		DataType hashStorage = dataTypeFactory.get(hashStorageName);
 
-		for (int k = 0; k < hashes.length; k++) {
-			HashLocation hl = hashLocations.get(k);
-			if (tm.isCancelled())
+		for (int k = 0; k < transformedHashes.length; k++) {
+			HashLocation tableEntry = hashLocations.get(k);
+			HashResolutionResult result;
+			if (tm.isCancelled()) {
 				break;
-			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", hashes[k], hl.getHashAsLong()));
-
-			if (resolvedHashes.containsKey(hashes[k])) {
-				hl.resolution = resolvedHashes.get(hashes[k]);
+			}
+			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", transformedHashes[k], tableEntry.getHashAsLong()));
+			if (resolvedHashes.containsKey(transformedHashes[k])) {
+				tableEntry.resolution = resolvedHashes.get(transformedHashes[k]).hashInfo.apiName;
 				tm.incrementProgress(1);
 				continue;
 			}
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashes[k], permutation);
-			for (HashDB.HashDBApi.HashInfo hi : resolved)
+			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, transformedHashes[k], permutation);
+
+			for (HashDB.HashDBApi.HashInfo hi : resolved) {
 				dialog.addNewPermutation(hi.permutation, true);
+			}
+
 			if (resolved.size() == 0) {
+				resolvedHashes.put(
+					transformedHashes[k],
+					new HashResolutionResult(HashResolutionResultType.NO_MATCHES_FOUND, tableEntry.hashValue)
+				);
+				logDebugMessage(String.format("No resolution known for %s.", tableEntry.getHashValue()));
+				tm.incrementProgress(1);
 				continue;
-			} else if (resolved.size() > 1) {
-				println(String.format("[HashDB] Hash collision for %s, skipping.", hl.getHashValue()));
+			}
+
+			if (resolved.size() > 1) {
+				resolvedHashes.put(
+					transformedHashes[k],	
+					new HashResolutionResult(HashResolutionResultType.HASH_COLLISION, tableEntry.hashValue)
+				);
+				logDebugMessage(String.format("Hash collision for %s, skipping.", tableEntry.getHashValue()));
 				if (permutation == null) {
 					remark = "Select a permutation to resolve remaining hashes.";
 				}
+				tm.incrementProgress(1);
 				continue;
 			}
-
-			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
-			hl.resolution = inputHashInfo.apiName;
+			
+			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();			
+			tableEntry.resolution = inputHashInfo.apiName;
 
 			if (inputHashInfo.modules.length == 0) {
-				println(String.format("[HashDB] No modules found for %s (hash %s)", inputHashInfo.apiName,
-						hl.getHashValue()));
-			}
-
+				resolvedHashes.put(
+					transformedHashes[k],
+					new HashResolutionResult(HashResolutionResultType.NOT_AN_API_RESULT, tableEntry.hashValue, inputHashInfo)
+				);
+				tm.incrementProgress(1);
+				continue;
+			} 
+			
 			if (dialog.resolveEntireModules()) {
 				for (String module : inputHashInfo.modules) {
 					if (permutation != null && inputHashInfo.permutation.compareTo(permutation) != 0)
 						continue;
-					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
-							inputHashInfo.permutation)) {
-						resolveCount += dataTypeFactory.onHashResolution(hashStorage, hashInfo,
-								invertHashTransformation(hashInfo.hash));
-						resolvedHashes.put(hashInfo.hash, hashInfo.apiName);
+					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
+						long baseHash = invertHashTransformation(hashInfo.hash); 
+						resolvedHashes.put(
+							hashInfo.hash,
+							new HashResolutionResult(HashResolutionResultType.RESOLVED, baseHash, hashInfo)
+						);
 					}
 				}
 			} else {
-				resolveCount += dataTypeFactory.onHashResolution(hashStorage, inputHashInfo, hl.hashValue);
-				resolvedHashes.put(inputHashInfo.hash, inputHashInfo.apiName);
+				resolvedHashes.put(
+					transformedHashes[k],
+					new HashResolutionResult(HashResolutionResultType.RESOLVED, tableEntry.hashValue, inputHashInfo)
+				);
 			}
 
-			if (tm != null) {
-				tm.incrementProgress(1);
-			}
+			tm.incrementProgress(1);
 		}
 		tm.setMessage(String.format("updating data type %s", hashStorage.getDisplayName()));
 		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashStorageName));
