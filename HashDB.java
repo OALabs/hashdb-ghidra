@@ -2,8 +2,8 @@
 //@author @larsborn @huettenhain
 //@category HashDB
 //@keybinding F3
-//@menupath 
-//@toolbar 
+//@menupath
+//@toolbar
 
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
@@ -673,11 +673,11 @@ public class HashDB extends GhidraScript {
 			addHashButton.addActionListener(new ActionListener() {
 				@Override
 				public void actionPerformed(ActionEvent event) {
-					
+
 					final class HashAdder extends SwingWorker<Boolean, Object> {
 						String hashValue;
 						Address address;
-						
+
 						HashAdder(Address address, String hashValue) {
 							this.hashValue = hashValue;
 							this.address = address;
@@ -803,7 +803,7 @@ public class HashDB extends GhidraScript {
 	private void logDebugMessage(String msg) {
 		logDebugMessage(msg, null);
 	}
-	
+
 	private void logDebugMessage(String msg, Exception e) {
 		String logOutput = String.format("[HashDBg] %s", msg);
 		if (e != null) {
@@ -811,14 +811,14 @@ public class HashDB extends GhidraScript {
 				logOutput,
 				getStackTraceAsString(e)
 			);
-		}		
+		}
 		println(logOutput);
 	}
 
 	private DataType getDataType(String name) {
 		return getDataType(name, UnsignedLongLongDataType.dataType);
 	}
-	
+
 	private DataType getDataType(String name, DataType fallback) {
 		ArrayList<DataType> matchingDataTypes = new ArrayList<>();
 		DataTypeManager dataTypeManager = currentProgram.getDataTypeManager();
@@ -827,7 +827,7 @@ public class HashDB extends GhidraScript {
 			AutoAnalysisManager am = AutoAnalysisManager.getAnalysisManager(currentProgram);
 			DataTypeManagerService service = am.getDataTypeManagerService();
 			for (SourceArchive a : dataTypeManager.getSourceArchives()) {
-				String archiveName = a.getName(); 
+				String archiveName = a.getName();
 				DataTypeManager dtm;
 				try {
 					dtm = service.openDataTypeArchive(archiveName);
@@ -844,8 +844,8 @@ public class HashDB extends GhidraScript {
 			return matchingDataTypes.iterator().next();
 		return fallback;
 	}
-	
-	public void run() throws Exception {	
+
+	public void run() throws Exception {
 		showDialog();
 		if (currentSelection != null) {
 			for (AddressRange addressRange : currentSelection.getAddressRanges(true)) {
@@ -874,7 +874,7 @@ public class HashDB extends GhidraScript {
 		public DataTypeFactory(OutputMethod strategy) {
 			this.strategy = strategy;
 			this.dataTypeManager = getCurrentProgram().getDataTypeManager();
-			this.rootPath = new CategoryPath("/HashDB"); 
+			this.rootPath = new CategoryPath("/HashDB");
 		}
 
 		private DataType makeNew(String name) {
@@ -885,7 +885,7 @@ public class HashDB extends GhidraScript {
 				return new EnumDataType(rootPath, name, 4);
 			}
 		}
-		
+
 		public DataType get(String hashStorageName) throws Exception {
 			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
 			if (hashStorage == null)
