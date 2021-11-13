@@ -940,21 +940,45 @@ public class HashDB extends GhidraScript {
 	}
 
 	private class HashResolutionResult {
-		public HashDB.HashDBApi.HashInfo hashInfo;
+		public ArrayList<HashDB.HashDBApi.HashInfo> hashInfos;
 		public long hashBeforeTransformation;
-		public HashResolutionResultType type;
 
-		HashResolutionResult(HashResolutionResultType type, long hashBeforeTransformation) {
-			this.type = type;
+		HashResolutionResult(long hashBeforeTransformation) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
-			this.hashInfo = null;
+			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
 		}
 
-		HashResolutionResult(HashResolutionResultType type, long hashBeforeTransformation,
+		HashResolutionResult(long hashBeforeTransformation,
 				HashDB.HashDBApi.HashInfo hashInfo) {
-			this.type = type;
 			this.hashBeforeTransformation = hashBeforeTransformation;
-			this.hashInfo = hashInfo;
+			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
+			this.hashInfos.add(hashInfo);
+		}
+
+		HashResolutionResult(long hashBeforeTransformation,
+				ArrayList<HashDB.HashDBApi.HashInfo> hashInfos) {
+			this.hashBeforeTransformation = hashBeforeTransformation;
+			this.hashInfos = hashInfos;
+		}
+
+		public HashResolutionResultType getType() {
+			switch (hashInfos.size()) {
+			case 0:
+				return HashResolutionResultType.NO_MATCHES_FOUND;
+			case 1:
+				return (hashInfos.iterator().next().modules.length == 0) ? HashResolutionResultType.NOT_AN_API_RESULT
+						: HashResolutionResultType.RESOLVED;
+			default:
+				return HashResolutionResultType.HASH_COLLISION;
+			}
+
+		}
+
+		public HashDBApi.HashInfo getSingleHashInfo() throws Exception {
+			if (hashInfos.size() != 1)
+				throw new Exception(
+						String.format("This HashResolutionResult had %d HashInfo entries.", hashInfos.size()));
+			return hashInfos.iterator().next();
 		}
 	}
 
@@ -966,35 +990,29 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void addNoMatch(long hashBeforeTransform, long hashAfterTransform) {
-			store.put(hashAfterTransform,
-					new HashResolutionResult(HashResolutionResultType.NO_MATCHES_FOUND, hashBeforeTransform));
+			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform));
 		}
 
-		public void addCollision(long hashBeforeTransform, long hashAfterTransform) {
-			store.put(hashAfterTransform,
-					new HashResolutionResult(HashResolutionResultType.HASH_COLLISION, hashBeforeTransform));
+		public void addCollision(long hashBeforeTransform, long hashAfterTransform, ArrayList<HashDBApi.HashInfo> hashInfos) {
+			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform, hashInfos));
 		}
 
-		public void addNonApiResult(long hashBeforeTransform, long hashAfterTransform,
-				HashDB.HashDBApi.HashInfo hashInfo) {
-			store.put(hashAfterTransform, new HashResolutionResult(HashResolutionResultType.NOT_AN_API_RESULT,
-					hashBeforeTransform, hashInfo));
-		}
-
-		public void addResolution(long hashBeforeTransform, long hashAfterTransform,
-				HashDB.HashDBApi.HashInfo hashInfo) {
-			store.put(hashAfterTransform,
-					new HashResolutionResult(HashResolutionResultType.RESOLVED, hashBeforeTransform, hashInfo));
+		public void addResolution(long hashBeforeTransform, long hashAfterTransform, HashDBApi.HashInfo hashInfo) {
+			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform, hashInfo));
 		}
 
 		public String get(long hashAfterTransform) {
-			return store.containsKey(hashAfterTransform) ? store.get(hashAfterTransform).hashInfo.apiName : null;
+			try {
+				return store.get(hashAfterTransform).getSingleHashInfo().apiName;
+			} catch (Exception e) {
+				return null;
+			}
 		}
 
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : store.values()) {
-				if (result.type == HashResolutionResultType.RESOLVED) {
+				if (result.getType() == HashResolutionResultType.RESOLVED) {
 					ret.add(result);
 				}
 			}
@@ -1003,7 +1021,7 @@ public class HashDB extends GhidraScript {
 
 		public boolean hadCollision() {
 			for (HashResolutionResult result : store.values()) {
-				if (result.type == HashResolutionResultType.HASH_COLLISION) {
+				if (result.getType() == HashResolutionResultType.HASH_COLLISION) {
 					return true;
 				}
 			}
@@ -1088,7 +1106,7 @@ public class HashDB extends GhidraScript {
 			}
 
 			if (resolved.size() > 1) {
-				resultStore.addCollision(tableEntry.hashValue, hashesAfterTransform[k]);
+				resultStore.addCollision(tableEntry.hashValue, hashesAfterTransform[k], resolved);
 				logDebugMessage(String.format("Hash collision for %s, skipping.", tableEntry.getHashValue()));
 				tm.incrementProgress(1);
 				continue;
@@ -1098,7 +1116,7 @@ public class HashDB extends GhidraScript {
 			tableEntry.resolution = inputHashInfo.apiName;
 
 			if (inputHashInfo.modules.length == 0) {
-				resultStore.addNonApiResult(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
+				resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
 				tm.incrementProgress(1);
 				continue;
 			}
@@ -1128,7 +1146,7 @@ public class HashDB extends GhidraScript {
 
 		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
 		for (HashResolutionResult result : resolvedResults) {
-			dataTypeFactory.onHashResolution(hashStorage, result.hashInfo, result.hashBeforeTransformation);
+			dataTypeFactory.onHashResolution(hashStorage, result.getSingleHashInfo(), result.hashBeforeTransformation);
 		}
 
 		String remark = "";
