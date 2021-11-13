@@ -56,6 +56,7 @@ import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.FunctionDefinitionDataType;
 import ghidra.program.model.data.InvalidDataTypeException;
 import ghidra.program.model.data.LongDataType;
 import ghidra.program.model.data.PointerDataType;
@@ -915,13 +916,13 @@ public class HashDB extends GhidraScript {
 				case Struct:
 					StructureDataType st = (StructureDataType) hashStorage;
 					DataType entryDataType = getDataType(hashInfo.apiName, null);
-					if (entryDataType != null) {
-						entryDataType = PointerDataType.getPointer(entryDataType,
-								currentProgram.getDefaultPointerSize());
-					} else {
-						entryDataType = UnsignedLongLongDataType.dataType;
+					if (entryDataType == null) {
+						entryDataType = getDataType("FARPROC", null);
 					}
-					logDebugMessage(entryDataType.toString());
+					if (entryDataType == null) {
+						entryDataType = new FunctionDefinitionDataType("FARPROC");
+					}						
+					entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
 					st.add(entryDataType, hashInfo.apiName, "");
 					break;
 				}
@@ -949,15 +950,13 @@ public class HashDB extends GhidraScript {
 			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
 		}
 
-		HashResolutionResult(long hashBeforeTransformation,
-				HashDB.HashDBApi.HashInfo hashInfo) {
+		HashResolutionResult(long hashBeforeTransformation, HashDB.HashDBApi.HashInfo hashInfo) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
 			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
 			this.hashInfos.add(hashInfo);
 		}
 
-		HashResolutionResult(long hashBeforeTransformation,
-				ArrayList<HashDB.HashDBApi.HashInfo> hashInfos) {
+		HashResolutionResult(long hashBeforeTransformation, ArrayList<HashDB.HashDBApi.HashInfo> hashInfos) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
 			this.hashInfos = hashInfos;
 		}
@@ -975,11 +974,11 @@ public class HashDB extends GhidraScript {
 				return false;
 			}
 		}
-		
+
 		public boolean isCollision() {
 			return getType() == HashResolutionResultType.HASH_COLLISION;
 		}
-		
+
 		private HashResolutionResultType getType() {
 			switch (hashInfos.size()) {
 			case 0:
@@ -1012,7 +1011,8 @@ public class HashDB extends GhidraScript {
 			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform));
 		}
 
-		public void addCollision(long hashBeforeTransform, long hashAfterTransform, ArrayList<HashDBApi.HashInfo> hashInfos) {
+		public void addCollision(long hashBeforeTransform, long hashAfterTransform,
+				ArrayList<HashDBApi.HashInfo> hashInfos) {
 			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform, hashInfos));
 		}
 
@@ -1034,12 +1034,12 @@ public class HashDB extends GhidraScript {
 
 		public String prunePermuatations() throws Exception {
 			HashSet<String> matches = globallyMatchingPermutations();
-			if (matches.size() == 0) { 
+			if (matches.size() == 0) {
 				return null;
 			}
 			String match = matches.iterator().next();
 			for (HashResolutionResult result : store.values()) {
-				HashDBApi.HashInfo collected = null; 
+				HashDBApi.HashInfo collected = null;
 				if (!result.isApiResult()) {
 					continue;
 				}
@@ -1049,19 +1049,20 @@ public class HashDB extends GhidraScript {
 					}
 				}
 				if (collected == null) {
-					throw new Exception(String.format("The alleged global match %s was missing in a HashInfo instance", match));
+					throw new Exception(
+							String.format("The alleged global match %s was missing in a HashInfo instance", match));
 				}
 				result.hashInfos.clear();
 				result.hashInfos.add(collected);
 			}
 			return match;
 		}
-		
+
 		private HashSet<String> globallyMatchingPermutations() {
 			HashMap<String, Long> permutationCounts = new HashMap<String, Long>();
 			HashSet<String> globallyMatchingPermutations = new HashSet<String>();
 			int apiResultCount = 0;
-			
+
 			for (HashResolutionResult result : store.values()) {
 				if (!result.isApiResult()) {
 					continue;
@@ -1069,17 +1070,18 @@ public class HashDB extends GhidraScript {
 				apiResultCount += 1;
 				for (HashDBApi.HashInfo hashInfo : result.hashInfos) {
 					Long oldCount = permutationCounts.get(hashInfo.permutation);
-					if (oldCount == null) oldCount = 0L;
+					if (oldCount == null)
+						oldCount = 0L;
 					permutationCounts.put(hashInfo.permutation, oldCount + 1L);
 				}
-			}		
+			}
 			for (String key : permutationCounts.keySet()) {
 				if (apiResultCount == permutationCounts.get(key))
 					globallyMatchingPermutations.add(key);
 			}
 			return globallyMatchingPermutations;
 		}
-		
+
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : store.values()) {
@@ -1218,17 +1220,16 @@ public class HashDB extends GhidraScript {
 			tm.incrementProgress(1);
 		}
 
-		
 		if (resultStore.hasCollisions()) {
 			tm.setMessage("pruning permutation collisions");
-			String match = resultStore.prunePermuatations(); 
+			String match = resultStore.prunePermuatations();
 			if (match != null) {
 				for (int k = 0; k < hashesAfterTransform.length; k++) {
 					HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
 					if (result.isResolved()) {
 						HashLocation tableEntry = hashLocations.get(k);
 						tableEntry.resolution = result.getSingleHashInfo().apiName;
-					}			
+					}
 				}
 				dialog.addNewPermutation(match, true);
 				logDebugMessage(String.format("The permutation '%s' was auto-selected because it matched all.", match));
@@ -1241,12 +1242,11 @@ public class HashDB extends GhidraScript {
 		return processResult(resultStore);
 	}
 
-	private String processResult(HashResolutionResultStore resultStore) throws Exception {	
+	private String processResult(HashResolutionResultStore resultStore) throws Exception {
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
 		String hashStorageName = dialog.getStorageName();
 		DataType hashStorage = dataTypeFactory.get(hashStorageName);
 
-		
 		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
 		for (HashResolutionResult result : resolvedResults) {
 			dataTypeFactory.onHashResolution(hashStorage, result.getSingleHashInfo(), result.hashBeforeTransformation);
