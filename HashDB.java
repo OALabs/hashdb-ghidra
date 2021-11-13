@@ -1187,7 +1187,9 @@ public class HashDB extends GhidraScript {
 
 			if (resolved.size() > 1) {
 				resultStore.addCollision(tableEntry.hashValue, hashesAfterTransform[k], resolved);
-				logDebugMessage(String.format("Hash collision for %s, skipping.", tableEntry.getHashValue()));
+				if (GUI_DEBUGGING) {
+					logDebugMessage(String.format("Hash collision for %s, skipping.", tableEntry.getHashValue()));
+				}
 				tm.incrementProgress(1);
 				continue;
 			}
