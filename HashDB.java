@@ -1074,7 +1074,6 @@ public class HashDB extends GhidraScript {
 				}
 			}		
 			for (String key : permutationCounts.keySet()) {
-				logDebugMessage(String.format("%s happened %d times out of %d", key, permutationCounts.get(key), apiResultCount));
 				if (apiResultCount == permutationCounts.get(key))
 					globallyMatchingPermutations.add(key);
 			}
