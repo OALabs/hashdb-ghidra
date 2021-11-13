@@ -967,7 +967,75 @@ public class HashDB extends GhidraScript {
 			this.hashInfo = hashInfo;
 		}
 	}
-	
+
+	private class HashResolutionResultStore {
+		private Map<Long, HashResolutionResult> store;
+
+		HashResolutionResultStore() {
+			store = new HashMap<Long, HashResolutionResult>();
+		}
+
+		public void addNoMatch(long hashBeforeTransform, long hashAfterTransform) {
+			store.put(
+				hashAfterTransform,
+				new HashResolutionResult(HashResolutionResultType.NO_MATCHES_FOUND, hashBeforeTransform)
+			);
+		}
+
+		public void addCollision(long hashBeforeTransform, long hashAfterTransform) {
+			store.put(
+				hashAfterTransform,
+				new HashResolutionResult(HashResolutionResultType.HASH_COLLISION, hashBeforeTransform)
+			);
+		}
+
+		public void addNonApiResult(long hashBeforeTransform, long hashAfterTransform, HashDB.HashDBApi.HashInfo hashInfo) {
+			resolvedHashes.put(
+				hashAfterTransform,
+				new HashResolutionResult(
+					HashResolutionResultType.NOT_AN_API_RESULT,
+					hashBeforeTransform,
+					hashInfo
+				)
+			);
+		}
+
+		public void addResolution(long hashBeforeTransform, long hashAfterTransform, HashDB.HashDBApi.HashInfo hashInfo) {
+			resolvedHashes.put(
+				hashAfterTransform,
+				new HashResolutionResult(
+					HashResolutionResultType.RESOLVED,
+					hashBeforeTransform,
+					hashInfo
+				)
+			);
+		}
+
+		public String get(long hashAfterTransform) {
+			return store.containsKey(hashAfterTransform)
+				? store.get(hashesAfterTransform[k]).hashInfo.apiName : null;
+		}
+
+		public ArrayList<HashResolutionResult> resolvedResults() {
+			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
+			for(HashResolutionResult result : store.values()) {
+				if (result.type == HashResolutionResultType.RESOLVED) {
+					ret.add(result);
+				}
+			}
+			return ret;
+		}
+
+		public boolean hadCollision() {
+			for(HashResolutionResult result : store.values()) {
+				if (result.type == HashResolutionResultType.HASH_COLLISION) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+
 	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
 		HashDBApi api = new HashDBApi();
 		long[] hashesAfterTransform = new long[hashLocations.size()];
@@ -1015,50 +1083,35 @@ public class HashDB extends GhidraScript {
 			tm.incrementProgress(taskHunt);
 		}
 
-		int resolveCount = 0;
-		String hashStorageName = dialog.getStorageName();
-		String remark = "";
-		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
-		Map<Long, HashResolutionResult> resolvedHashes = new HashMap<Long, HashResolutionResult>();
-		DataType hashStorage = dataTypeFactory.get(hashStorageName);
-
-		for (int k = 0; k < transformedHashes.length; k++) {
+		for (int k = 0; k < hashesAfterTransform.length; k++) {
 			HashLocation tableEntry = hashLocations.get(k);
 			HashResolutionResult result;
 			if (tm.isCancelled()) {
 				break;
 			}
-			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", transformedHashes[k], tableEntry.getHashAsLong()));
-			if (resolvedHashes.containsKey(transformedHashes[k])) {
-				tableEntry.resolution = resolvedHashes.get(transformedHashes[k]).hashInfo.apiName;
+			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", hashesAfterTransform[k], tableEntry.getHashAsLong()));
+			String existingResolution = resultStore.get(hashesAfterTransform[k]);
+			if (existingResolution != null) {
+				tableEntry.resolution = existingResolution;
 				tm.incrementProgress(1);
 				continue;
 			}
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, transformedHashes[k], permutation);
+			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k], permutation);
 
 			for (HashDB.HashDBApi.HashInfo hi : resolved) {
 				dialog.addNewPermutation(hi.permutation, true);
 			}
 
 			if (resolved.size() == 0) {
-				resolvedHashes.put(
-					transformedHashes[k],
-					new HashResolutionResult(HashResolutionResultType.NO_MATCHES_FOUND, tableEntry.hashValue)
-				);
+				resultStore.addNoMatch(tableEntry.hashValue, hashesAfterTransform[k]);
 				logDebugMessage(String.format("No resolution known for %s.", tableEntry.getHashValue()));
 				tm.incrementProgress(1);
 				continue;
 			}
 
 			if (resolved.size() > 1) {
-				resolvedHashes.put(
-					transformedHashes[k],	
-					new HashResolutionResult(HashResolutionResultType.HASH_COLLISION, tableEntry.hashValue)
-				);
+				resultStore.addCollision(tableEntry.hashValue, hashesAfterTransform[k]);
 				logDebugMessage(String.format("Hash collision for %s, skipping.", tableEntry.getHashValue()));
-				if (permutation == null) {
-					remark = "Select a permutation to resolve remaining hashes.";
-				}
 				tm.incrementProgress(1);
 				continue;
 			}
@@ -1067,10 +1120,11 @@ public class HashDB extends GhidraScript {
 			tableEntry.resolution = inputHashInfo.apiName;
 
 			if (inputHashInfo.modules.length == 0) {
-				resolvedHashes.put(
-					transformedHashes[k],
-					new HashResolutionResult(HashResolutionResultType.NOT_AN_API_RESULT, tableEntry.hashValue, inputHashInfo)
-				);
+				resultStore.addNonApiResult(
+					tableEntry.hashValue,
+					hashesAfterTransform[k],
+					inputHashInfo
+				)
 				tm.incrementProgress(1);
 				continue;
 			}
@@ -1080,28 +1134,52 @@ public class HashDB extends GhidraScript {
 					if (permutation != null && inputHashInfo.permutation.compareTo(permutation) != 0)
 						continue;
 					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
-						long baseHash = invertHashTransformation(hashInfo.hash); 
-						resolvedHashes.put(
+						resultStore.addResolution(
+							invertHashTransformation(hashInfo.hash),
 							hashInfo.hash,
-							new HashResolutionResult(HashResolutionResultType.RESOLVED, baseHash, hashInfo)
+							hashInfo
 						);
 					}
 				}
 			} else {
-				resolvedHashes.put(
-					transformedHashes[k],
-					new HashResolutionResult(HashResolutionResultType.RESOLVED, tableEntry.hashValue, inputHashInfo)
-				);
+				resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
 			}
 			tm.incrementProgress(1);
 		}
-		tm.setMessage(String.format("updating data type %s", hashStorage.getDisplayName()));
+		tm.setMessage(String.format("updating data type %s", dialog.getStorageName()));
+		return processResult(resultStore);
+	}
+
+	private String processResult(HashResolutionResultStore resultStore) {
+		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
+		int resolveCount = 0;
+		String hashStorageName = dialog.getStorageName();
+		DataType hashStorage = dataTypeFactory.get(hashStorageName);
+
+		ArrayList<HashResolutionResult> resolvedResults = store.resolvedResults();
+		for(HashResolutionResult result : resolvedResults) {
+			dataTypeFactory.onHashResolution(
+				hashStorage,
+				resolvedResults.hashInfo,
+				result.hashBeforeTransformation
+			);
+		}
+
+		String remark = "";
+		if (store.hadCollision() && dialog.getCurrentPermutation() == null) {
+			remark = "Select a permutation to resolve remaining hashes.";
+		}
+
 		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashStorageName));
 		dataTypeFactory.commit(hashStorage);
 
 		currentProgram.endTransaction(id, true);
-		return String.format("Added %d values to data type '%s'. %s", resolveCount, hashStorage.getDisplayName(), remark)
-				.trim();
+		return String.format(
+			"Added %d values to data type '%s'. %s",
+			resolvedResults.size(),
+			hashStorage.getDisplayName(),
+			remark
+		).trim();
 	}
 
 	private long transformHash(long hash) throws ScriptException {
