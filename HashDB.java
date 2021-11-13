@@ -48,6 +48,7 @@ import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.InvalidDataTypeException;
 import ghidra.program.model.data.LongDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Data;
@@ -793,41 +794,40 @@ public class HashDB extends GhidraScript {
 	public class DataTypeFactory {
 		private OutputMethod strategy;
 		private DataTypeManager dataTypeManager;
+		private CategoryPath rootPath;
 
 		public DataTypeFactory(OutputMethod strategy) {
 			this.strategy = strategy;
 			this.dataTypeManager = getCurrentProgram().getDataTypeManager();
+			this.rootPath = new CategoryPath("/HashDB"); 
 		}
 
+		private DataType makeNew(String name) {
+			switch (strategy) {
+			case Struct:
+				return new StructureDataType(rootPath, name, 4);
+			case Enum: default:
+				return new EnumDataType(rootPath, name, 4);
+			}
+		}
+		
 		public DataType get(String hashStorageName) throws Exception {
 			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
-
+			if (hashStorage == null)
+				return makeNew(hashStorageName);
+			DataType copy = hashStorage.copy(dataTypeManager);
+			boolean typesMatch = true;
 			switch (strategy) {
 			case Enum:
-				if (hashStorage == null) {
-					hashStorage = new EnumDataType(new CategoryPath("/HashDB"), hashStorageName, 4);
-				} else {
-					DataType copy = hashStorage.copy(dataTypeManager);
-					if (!(copy instanceof EnumDataType)) {
-						throw new Exception(
-								String.format("mismatching strategy: expected enum: %s", hashStorage.toString()));
-					}
-					hashStorage = copy;
-				}
+				typesMatch = (copy instanceof EnumDataType);
 				break;
 			case Struct:
-				if (hashStorage == null) {
-					hashStorage = new StructureDataType(new CategoryPath("/HashDB"), hashStorageName, 4);
-				} else {
-					if (!(hashStorage instanceof StructureDataType)) {
-						throw new Exception(
-								String.format("mismatching strategy: expected struct: %s", hashStorage.toString()));
-					}
-					hashStorage = hashStorage.copy(dataTypeManager);
-				}
+				typesMatch = (copy instanceof StructureDataType);
 				break;
 			}
-			return hashStorage;
+			if (!typesMatch)
+				throw new InvalidDataTypeException(hashStorage);
+			return copy;
 		}
 
 		public void commit(DataType hashStorage) {
