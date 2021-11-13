@@ -520,7 +520,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void waitAndClearSelection() {
-			long maxWaitCount = 10;
+			long maxWaitCount = 200;
 			while (dialog.isBusy()) {
 				try {
 					Thread.sleep(10);
@@ -528,9 +528,7 @@ public class HashDB extends GhidraScript {
 					println(String.format(getStackTraceAsString(e)));
 				}
 				if (maxWaitCount == 0) {
-					if (GUI_DEBUGGING) {
-						println("waitAndClearSelection ran into timeout");
-					}
+					logDebugMessage("aborted waitAndClearSelection due to UI timeout");
 					break;
 				}
 				maxWaitCount--;
@@ -675,11 +673,33 @@ public class HashDB extends GhidraScript {
 			addHashButton.addActionListener(new ActionListener() {
 				@Override
 				public void actionPerformed(ActionEvent event) {
-					try {
-						addHash(currentAddress, parseHash(manualHash.getText()));
-					} catch (Exception e) {
-						println(String.format("[HashDB] %s", e.getMessage()));
+					
+					final class HashAdder extends SwingWorker<Boolean, Object> {
+						String hashValue;
+						Address address;
+						
+						HashAdder(Address address, String hashValue) {
+							this.hashValue = hashValue;
+							this.address = address;
+						}
+
+						@Override
+						protected Boolean doInBackground() throws Exception {
+							return addHash(address, parseHash(hashValue));
+						}
+
+						@Override
+						protected void done() {
+							try {
+								this.get();
+							} catch (InterruptedException | ExecutionException e) {
+								logDebugMessage(String.format("invalid hash value: %s", hashValue));
+							}
+						}
 					}
+
+					HashAdder adder = new HashAdder(currentAddress, manualHash.getText());
+					adder.execute();
 				}
 			});
 			JButton deleteSelectionButton = new JButton("Remove Selection");
@@ -1033,7 +1053,7 @@ public class HashDB extends GhidraScript {
 		dataTypeFactory.commit(hashStorage);
 
 		currentProgram.endTransaction(id, true);
-		return String.format("Added %d enum values to %s. %s", resolveCount, hashStorage.getDisplayName(), remark)
+		return String.format("Added %d values to data type '%s'. %s", resolveCount, hashStorage.getDisplayName(), remark)
 				.trim();
 	}
 
