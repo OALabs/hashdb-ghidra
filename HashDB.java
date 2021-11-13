@@ -8,19 +8,26 @@
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import ghidra.app.cmd.function.ApplyFunctionDataTypesCmd;
 import ghidra.app.decompiler.DecompilerLocation;
+import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
+import ghidra.app.plugin.core.datamgr.archive.DuplicateIdException;
 import ghidra.app.script.GhidraScript;
+import ghidra.app.services.DataTypeManagerService;
 import ghidra.app.tablechooser.AddressableRowObject;
 import ghidra.app.tablechooser.StringColumnDisplay;
 import ghidra.app.tablechooser.TableChooserDialog;
@@ -50,7 +57,10 @@ import ghidra.program.model.data.DataTypePath;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.InvalidDataTypeException;
 import ghidra.program.model.data.LongDataType;
+import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.SourceArchive;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.UnsignedLongLongDataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
@@ -770,7 +780,52 @@ public class HashDB extends GhidraScript {
 		return true;
 	}
 
-	public void run() throws Exception {
+	private void logDebugMessage(String msg) {
+		logDebugMessage(msg, null);
+	}
+	
+	private void logDebugMessage(String msg, Exception e) {
+		String logOutput = String.format("[HashDBg] %s", msg);
+		if (e != null) {
+			logOutput = String.format("%s: %s",
+				logOutput,
+				getStackTraceAsString(e)
+			);
+		}		
+		println(logOutput);
+	}
+
+	private DataType getDataType(String name) {
+		return getDataType(name, UnsignedLongLongDataType.dataType);
+	}
+	
+	private DataType getDataType(String name, DataType fallback) {
+		ArrayList<DataType> matchingDataTypes = new ArrayList<>();
+		DataTypeManager dataTypeManager = currentProgram.getDataTypeManager();
+		currentProgram.getDataTypeManager().findDataTypes(name, matchingDataTypes);
+		if (matchingDataTypes.size() == 0) {
+			AutoAnalysisManager am = AutoAnalysisManager.getAnalysisManager(currentProgram);
+			DataTypeManagerService service = am.getDataTypeManagerService();
+			for (SourceArchive a : dataTypeManager.getSourceArchives()) {
+				String archiveName = a.getName(); 
+				DataTypeManager dtm;
+				try {
+					dtm = service.openDataTypeArchive(archiveName);
+				} catch (Exception e) {
+					logDebugMessage(String.format("unable to open archive %s", archiveName), e);
+					continue;
+				}
+				dtm.findDataTypes(name, matchingDataTypes);
+				if (matchingDataTypes.size() > 0)
+					break;
+			}
+		}
+		if (matchingDataTypes.size() > 0)
+			return matchingDataTypes.iterator().next();
+		return fallback;
+	}
+	
+	public void run() throws Exception {	
 		showDialog();
 		if (currentSelection != null) {
 			for (AddressRange addressRange : currentSelection.getAddressRanges(true)) {
@@ -838,10 +893,22 @@ public class HashDB extends GhidraScript {
 			try {
 				switch (strategy) {
 				case Enum:
-					((EnumDataType) hashStorage).add(hashInfo.apiName, baseHash);
+					EnumDataType et = (EnumDataType) hashStorage;
+					et.add(hashInfo.apiName, baseHash);
 					break;
 				case Struct:
-					((StructureDataType) hashStorage).add(LongDataType.dataType, hashInfo.apiName, "");
+					StructureDataType st = (StructureDataType) hashStorage;
+					DataType entryDataType = getDataType(hashInfo.apiName, null);
+					if (entryDataType != null) {
+						entryDataType = PointerDataType.getPointer(
+							entryDataType,
+							currentProgram.getDefaultPointerSize()
+						);
+					} else {
+						entryDataType = UnsignedLongLongDataType.dataType;
+					}
+					logDebugMessage(entryDataType.toString());
+					st.add(entryDataType, hashInfo.apiName, "");
 					break;
 				}
 				return 1;
