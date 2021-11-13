@@ -15,6 +15,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -961,7 +962,25 @@ public class HashDB extends GhidraScript {
 			this.hashInfos = hashInfos;
 		}
 
-		public HashResolutionResultType getType() {
+		public boolean isResolved() {
+			return getType() == HashResolutionResultType.RESOLVED;
+		}
+
+		public boolean isApiResult() {
+			switch (getType()) {
+			case RESOLVED:
+			case HASH_COLLISION:
+				return true;
+			default:
+				return false;
+			}
+		}
+		
+		public boolean isCollision() {
+			return getType() == HashResolutionResultType.HASH_COLLISION;
+		}
+		
+		private HashResolutionResultType getType() {
 			switch (hashInfos.size()) {
 			case 0:
 				return HashResolutionResultType.NO_MATCHES_FOUND;
@@ -1001,7 +1020,7 @@ public class HashDB extends GhidraScript {
 			store.put(hashAfterTransform, new HashResolutionResult(hashBeforeTransform, hashInfo));
 		}
 
-		public String get(long hashAfterTransform) {
+		public String getApiName(long hashAfterTransform) {
 			try {
 				return store.get(hashAfterTransform).getSingleHashInfo().apiName;
 			} catch (Exception e) {
@@ -1009,10 +1028,63 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
+		public HashResolutionResult get(Long hashAfterTransform) {
+			return store.get(hashAfterTransform);
+		}
+
+		public String prunePermuatations() throws Exception {
+			HashSet<String> matches = globallyMatchingPermutations();
+			if (matches.size() == 0) { 
+				return null;
+			}
+			String match = matches.iterator().next();
+			for (HashResolutionResult result : store.values()) {
+				HashDBApi.HashInfo collected = null; 
+				if (!result.isApiResult()) {
+					continue;
+				}
+				for (HashDBApi.HashInfo info : result.hashInfos) {
+					if (info.permutation.equals(match)) {
+						collected = info;
+					}
+				}
+				if (collected == null) {
+					throw new Exception(String.format("The alleged global match %s was missing in a HashInfo instance", match));
+				}
+				result.hashInfos.clear();
+				result.hashInfos.add(collected);
+			}
+			return match;
+		}
+		
+		private HashSet<String> globallyMatchingPermutations() {
+			HashMap<String, Long> permutationCounts = new HashMap<String, Long>();
+			HashSet<String> globallyMatchingPermutations = new HashSet<String>();
+			int apiResultCount = 0;
+			
+			for (HashResolutionResult result : store.values()) {
+				if (!result.isApiResult()) {
+					continue;
+				}
+				apiResultCount += 1;
+				for (HashDBApi.HashInfo hashInfo : result.hashInfos) {
+					Long oldCount = permutationCounts.get(hashInfo.permutation);
+					if (oldCount == null) oldCount = 0L;
+					permutationCounts.put(hashInfo.permutation, oldCount + 1L);
+				}
+			}		
+			for (String key : permutationCounts.keySet()) {
+				logDebugMessage(String.format("%s happened %d times out of %d", key, permutationCounts.get(key), apiResultCount));
+				if (apiResultCount == permutationCounts.get(key))
+					globallyMatchingPermutations.add(key);
+			}
+			return globallyMatchingPermutations;
+		}
+		
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : store.values()) {
-				if (result.getType() == HashResolutionResultType.RESOLVED) {
+				if (result.isResolved()) {
 					ret.add(result);
 				}
 			}
@@ -1021,7 +1093,16 @@ public class HashDB extends GhidraScript {
 
 		public boolean hadCollision() {
 			for (HashResolutionResult result : store.values()) {
-				if (result.getType() == HashResolutionResultType.HASH_COLLISION) {
+				if (result.isCollision()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		public boolean hasCollisions() {
+			for (HashResolutionResult result : store.values()) {
+				if (result.isCollision()) {
 					return true;
 				}
 			}
@@ -1085,7 +1166,7 @@ public class HashDB extends GhidraScript {
 			}
 			tm.setMessage(String.format("resolving hash 0x%08X (base value 0x%08x)", hashesAfterTransform[k],
 					tableEntry.getHashAsLong()));
-			String existingResolution = resultStore.get(hashesAfterTransform[k]);
+			String existingResolution = resultStore.getApiName(hashesAfterTransform[k]);
 			if (existingResolution != null) {
 				tableEntry.resolution = existingResolution;
 				tm.incrementProgress(1);
@@ -1135,15 +1216,36 @@ public class HashDB extends GhidraScript {
 			}
 			tm.incrementProgress(1);
 		}
+
+		
+		if (resultStore.hasCollisions()) {
+			tm.setMessage("pruning permutation collisions");
+			String match = resultStore.prunePermuatations(); 
+			if (match != null) {
+				for (int k = 0; k < hashesAfterTransform.length; k++) {
+					HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
+					if (result.isResolved()) {
+						HashLocation tableEntry = hashLocations.get(k);
+						tableEntry.resolution = result.getSingleHashInfo().apiName;
+					}			
+				}
+				dialog.addNewPermutation(match, true);
+				logDebugMessage(String.format("The permutation '%s' was auto-selected because it matched all.", match));
+			} else {
+				logDebugMessage("Permutations could not be disambiguated, please select one manually.");
+			}
+		}
+
 		tm.setMessage(String.format("updating data type %s", dialog.getStorageName()));
 		return processResult(resultStore);
 	}
 
-	private String processResult(HashResolutionResultStore resultStore) throws Exception {
+	private String processResult(HashResolutionResultStore resultStore) throws Exception {	
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
 		String hashStorageName = dialog.getStorageName();
 		DataType hashStorage = dataTypeFactory.get(hashStorageName);
 
+		
 		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
 		for (HashResolutionResult result : resolvedResults) {
 			dataTypeFactory.onHashResolution(hashStorage, result.getSingleHashInfo(), result.hashBeforeTransformation);
