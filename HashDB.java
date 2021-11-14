@@ -17,8 +17,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -202,7 +204,7 @@ public class HashDB extends GhidraScript {
 		private String httpQuery(String method, String endpoint, byte[] postData) throws Exception {
 			String urlString = String.format("%s/%s", baseUrl, endpoint);
 			if (HTTP_DEBUGGING) {
-				println(String.format("[HashDB] %s %s", method, urlString));
+				logDebugMessage(String.format("%s %s", method, urlString));
 			}
 			URL url = new URL(urlString);
 			SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
@@ -229,7 +231,7 @@ public class HashDB extends GhidraScript {
 					response.append(responseLine.trim());
 				}
 				if (HTTP_DEBUGGING) {
-					println(String.format("[HashDB] HTTP Response: %s", response));
+					logDebugMessage(String.format("HTTP Response: %s", response));
 				}
 				return response.toString();
 			}
@@ -497,7 +499,7 @@ public class HashDB extends GhidraScript {
 					try {
 						return resolveHashes(hashLocations, taskMonitor);
 					} catch (Exception e) {
-						println(String.format("[HashDB] exception during resolution: %s\n", getStackTraceAsString(e)));
+						logDebugMessage("Exception during resolution:", e);
 						return "unexpected error during resolution, see log";
 					}
 				}
@@ -527,10 +529,11 @@ public class HashDB extends GhidraScript {
 				try {
 					Thread.sleep(10);
 				} catch (Exception e) {
-					println(String.format(getStackTraceAsString(e)));
+					logDebugMessage("Exception in waitAndClearSelection:", e);
+					break;
 				}
 				if (maxWaitCount == 0) {
-					logDebugMessage("aborted waitAndClearSelection due to UI timeout");
+					logDebugMessage("UI Timeout in waitAndClearSelection.");
 					break;
 				}
 				maxWaitCount--;
@@ -758,7 +761,9 @@ public class HashDB extends GhidraScript {
 
 	private void showDialog() {
 		if (dialog == null) {
-			println("[HashDB] Creating new dialog.");
+			if (GUI_DEBUGGING) {
+				logDebugMessage("Creating new dialog.");
+			}
 			dialog = new HashTable(state.getTool(), new HashTableExecutor(), currentProgram, "HashDB is BestDB");
 			configureTableColumns(dialog);
 		}
@@ -788,16 +793,20 @@ public class HashDB extends GhidraScript {
 	}
 
 	private boolean addHash(Address address, long hash) {
+		HashMap<Long, Address> hashes = new HashMap<Long, Address>();
+		hashes.put(hash, address);
+		return addHashes(hashes);
+	}
+	
+	private boolean addHashes(HashMap<Long, Address> hashes) {
 		dialog.selectAllRows();
 		for (AddressableRowObject aro : dialog.getSelectedRowObjects()) {
 			HashLocation hl = (HashLocation) aro;
-			if (hl.getHashAsLong() == hash) {
-				dialog.waitAndClearSelection();
-				return false;
-			}
+			hashes.remove(hl.getHashAsLong());
 		}
-
-		dialog.add(new HashLocation(address, hash));
+		for (Long hash: hashes.keySet()) {
+			dialog.add(new HashLocation(hashes.get(hash), hash));
+		}
 		dialog.waitAndClearSelection();
 		return true;
 	}
@@ -807,9 +816,9 @@ public class HashDB extends GhidraScript {
 	}
 
 	private void logDebugMessage(String msg, Exception e) {
-		String logOutput = String.format("[HashDBg] %s", msg);
+		String logOutput = String.format("[HashDB] %s", msg);
 		if (e != null) {
-			logOutput = String.format("%s: %s", logOutput, getStackTraceAsString(e));
+			logOutput = String.format("%s %s", logOutput, getStackTraceAsString(e));
 		}
 		println(logOutput);
 	}
@@ -843,19 +852,24 @@ public class HashDB extends GhidraScript {
 	public void run() throws Exception {
 		showDialog();
 		if (currentSelection != null) {
+			HashMap<Long, Address> hashes = new HashMap<Long, Address>();
 			for (AddressRange addressRange : currentSelection.getAddressRanges(true)) {
 				for (Address address : addressRange) {
+					long hashValue;
 					try {
-						addHash(address, getHashAt(address));
+						hashValue = getHashAt(address);
 					} catch (NotFoundException e) {
+						continue;
 					}
+					hashes.put(hashValue, address);
 				}
 			}
+			addHashes(hashes);
 		} else {
 			try {
 				addHash(currentAddress, getSelectedHash());
 			} catch (Exception e) {
-				println(String.format("[HashDB] Error: %s", getStackTraceAsString(e)));
+				logDebugMessage("Error looking for hash values to add:", e);
 				return;
 			}
 		}
@@ -875,37 +889,88 @@ public class HashDB extends GhidraScript {
 		private DataType makeNew(String name) {
 			switch (strategy) {
 			case Struct:
-				return new StructureDataType(rootPath, name, 4);
+				return new StructureDataType(rootPath, name, 0);
 			case Enum:
 			default:
 				return new EnumDataType(rootPath, name, 4);
 			}
 		}
 
-		public DataType get(String hashStorageName) throws Exception {
-			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
-			if (hashStorage == null)
-				return makeNew(hashStorageName);
-			DataType copy = hashStorage.copy(dataTypeManager);
-			boolean typesMatch = true;
-			switch (strategy) {
-			case Enum:
-				typesMatch = (copy instanceof EnumDataType);
-				break;
-			case Struct:
-				typesMatch = (copy instanceof StructureDataType);
-				break;
+		private DataType getOutputType(String hashStorageName) {
+			if (strategy == OutputMethod.Enum) {
+				DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
+				if (hashStorage != null) {
+					DataType copy = hashStorage.copy(dataTypeManager); 
+					if (copy instanceof EnumDataType)
+						return copy;
+				}
 			}
-			if (!typesMatch)
-				throw new InvalidDataTypeException(hashStorage);
-			return copy;
+			return makeNew(hashStorageName);
 		}
 
-		public void commit(DataType hashStorage) {
+		private void putOutputType(DataType hashStorage) {
 			dataTypeManager.addDataType(hashStorage, DataTypeConflictHandler.REPLACE_HANDLER);
 		}
 
-		public int onHashResolution(DataType hashStorage, HashDB.HashDBApi.HashInfo hashInfo,
+		public void commitResults(String hashStorageName, HashResolutionResultStore store) {
+			DataType hashStorage = getOutputType(hashStorageName);		
+			switch (strategy) {
+			case Enum: {
+				EnumDataType dst = (EnumDataType) hashStorage;				
+				for (HashResolutionResult result : store.resolvedResults()) {
+					String apiName = result.getApiName();
+					try {
+						long oldValue = dst.getValue(apiName);
+						if (oldValue != result.hashBeforeTransformation) {
+							logDebugMessage(String.format(
+								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.",
+								hashStorageName,
+								apiName,
+								oldValue,
+								result.hashBeforeTransformation
+							));
+						}
+					} catch (NoSuchElementException e) {
+						dst.add(result.getApiName(), result.hashBeforeTransformation);
+					}
+				}
+				break;
+			}
+			case Struct: {
+				StructureDataType dst = (StructureDataType) hashStorage; 
+				for (HashResolutionResult result: store.allResults()) {
+					DataType entryDataType = null;
+					String apiName = null;
+					if (result.isResolved()) {
+						apiName = result.getApiName();
+						entryDataType = getDataType(apiName, null);
+					}
+					if (entryDataType == null) {
+						entryDataType = getDataType("FARPROC", null);
+					}
+					if (entryDataType == null) {
+						entryDataType = new FunctionDefinitionDataType("FARPROC");
+					}
+					entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
+					logDebugMessage(String.format("adding %s to %s", entryDataType.toString(), hashStorageName));
+					if (apiName == null) {
+						dst.add(entryDataType);
+					} else {
+						dst.add(entryDataType, apiName, "");
+					}
+				}
+				break;
+			}}
+			int id = currentProgram.startTransaction(
+					String.format("updating data type '%s'", hashStorageName));
+			try {
+				putOutputType(hashStorage);
+			} finally {
+				currentProgram.endTransaction(id, true);
+			}
+		}
+		
+		public int _onHashResolution(DataType hashStorage, HashDBApi.HashInfo hashInfo,
 				long hashBeforeTransformation) {
 			try {
 				switch (strategy) {
@@ -929,7 +994,7 @@ public class HashDB extends GhidraScript {
 				return 1;
 			} catch (IllegalArgumentException e) {
 				if (GUI_DEBUGGING) {
-					println(String.format("[HashDB] could not add %s (0x%08X) to %s: %s", hashInfo.apiName,
+					logDebugMessage(String.format("could not add %s (0x%08X) to %s: %s", hashInfo.apiName,
 							hashBeforeTransformation, hashStorage.getDisplayName(), e.toString()));
 				}
 				return 0;
@@ -942,21 +1007,21 @@ public class HashDB extends GhidraScript {
 	}
 
 	private class HashResolutionResult {
-		public ArrayList<HashDB.HashDBApi.HashInfo> hashInfos;
+		public ArrayList<HashDBApi.HashInfo> hashInfos;
 		public long hashBeforeTransformation;
 
 		HashResolutionResult(long hashBeforeTransformation) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
-			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
+			this.hashInfos = new ArrayList<HashDBApi.HashInfo>();
 		}
 
-		HashResolutionResult(long hashBeforeTransformation, HashDB.HashDBApi.HashInfo hashInfo) {
+		HashResolutionResult(long hashBeforeTransformation, HashDBApi.HashInfo hashInfo) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
-			this.hashInfos = new ArrayList<HashDB.HashDBApi.HashInfo>();
+			this.hashInfos = new ArrayList<HashDBApi.HashInfo>();
 			this.hashInfos.add(hashInfo);
 		}
 
-		HashResolutionResult(long hashBeforeTransformation, ArrayList<HashDB.HashDBApi.HashInfo> hashInfos) {
+		HashResolutionResult(long hashBeforeTransformation, ArrayList<HashDBApi.HashInfo> hashInfos) {
 			this.hashBeforeTransformation = hashBeforeTransformation;
 			this.hashInfos = hashInfos;
 		}
@@ -991,6 +1056,14 @@ public class HashDB extends GhidraScript {
 			}
 
 		}
+		
+		public String getApiName() {
+			try {
+				return hashInfos.iterator().next().apiName;
+			} catch (Exception e) {
+				return null;
+			}
+		}
 
 		public HashDBApi.HashInfo getSingleHashInfo() throws Exception {
 			if (hashInfos.size() != 1)
@@ -1004,7 +1077,7 @@ public class HashDB extends GhidraScript {
 		private Map<Long, HashResolutionResult> store;
 
 		HashResolutionResultStore() {
-			store = new HashMap<Long, HashResolutionResult>();
+			store = new LinkedHashMap<Long, HashResolutionResult>();
 		}
 
 		public void addNoMatch(long hashBeforeTransform, long hashAfterTransform) {
@@ -1038,7 +1111,7 @@ public class HashDB extends GhidraScript {
 				return null;
 			}
 			String match = matches.iterator().next();
-			for (HashResolutionResult result : store.values()) {
+			for (HashResolutionResult result : allResults()) {
 				HashDBApi.HashInfo collected = null;
 				if (!result.isApiResult()) {
 					continue;
@@ -1063,7 +1136,7 @@ public class HashDB extends GhidraScript {
 			HashSet<String> globallyMatchingPermutations = new HashSet<String>();
 			int apiResultCount = 0;
 
-			for (HashResolutionResult result : store.values()) {
+			for (HashResolutionResult result : allResults()) {
 				if (!result.isApiResult()) {
 					continue;
 				}
@@ -1084,16 +1157,20 @@ public class HashDB extends GhidraScript {
 
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
-			for (HashResolutionResult result : store.values()) {
+			for (HashResolutionResult result : allResults()) {
 				if (result.isResolved()) {
 					ret.add(result);
 				}
 			}
 			return ret;
 		}
+		
+		public Iterable<HashResolutionResult> allResults() {
+			return store.values();
+		}
 
 		public boolean hadCollision() {
-			for (HashResolutionResult result : store.values()) {
+			for (HashResolutionResult result : allResults()) {
 				if (result.isCollision()) {
 					return true;
 				}
@@ -1102,7 +1179,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		public boolean hasCollisions() {
-			for (HashResolutionResult result : store.values()) {
+			for (HashResolutionResult result : allResults()) {
 				if (result.isCollision()) {
 					return true;
 				}
@@ -1122,14 +1199,14 @@ public class HashDB extends GhidraScript {
 				if (inverse != baseHash) {
 					if (!dialog.resolveEntireModules()) {
 						dialog.setTransformationNotInvertible();
-						println("[HashDB] You lied. This transformation is not invertible. I fixed it for you.");
+						logDebugMessage("This transformation is not invertible; I fixed it for you.");
 					} else {
 						return String.format("Transformation could not be inverted for hash 0x%08X.", baseHash);
 					}
 				}
 			}
 			if (GUI_DEBUGGING) {
-				println(String.format("[HashDB] Translated hash for 0x%08X is 0x%08X.", baseHash,
+				logDebugMessage(String.format("Translated hash for 0x%08X is 0x%08X.", baseHash,
 						hashesAfterTransform[k]));
 			}
 		}
@@ -1173,10 +1250,10 @@ public class HashDB extends GhidraScript {
 				tm.incrementProgress(1);
 				continue;
 			}
-			ArrayList<HashDB.HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k],
+			ArrayList<HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k],
 					permutation);
 
-			for (HashDB.HashDBApi.HashInfo hi : resolved) {
+			for (HashDBApi.HashInfo hi : resolved) {
 				dialog.addNewPermutation(hi.permutation, true);
 			}
 
@@ -1196,7 +1273,7 @@ public class HashDB extends GhidraScript {
 				continue;
 			}
 
-			HashDB.HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
+			HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
 			tableEntry.resolution = inputHashInfo.apiName;
 
 			if (inputHashInfo.modules.length == 0) {
@@ -1209,7 +1286,7 @@ public class HashDB extends GhidraScript {
 				for (String module : inputHashInfo.modules) {
 					if (permutation != null && inputHashInfo.permutation.compareTo(permutation) != 0)
 						continue;
-					for (HashDB.HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
+					for (HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
 							inputHashInfo.permutation)) {
 						resultStore.addResolution(invertHashTransformation(hashInfo.hash), hashInfo.hash, hashInfo);
 					}
@@ -1244,25 +1321,15 @@ public class HashDB extends GhidraScript {
 
 	private String processResult(HashResolutionResultStore resultStore) throws Exception {
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
-		String hashStorageName = dialog.getStorageName();
-		DataType hashStorage = dataTypeFactory.get(hashStorageName);
-
 		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
-		for (HashResolutionResult result : resolvedResults) {
-			dataTypeFactory.onHashResolution(hashStorage, result.getSingleHashInfo(), result.hashBeforeTransformation);
-		}
-
+		String hashStorageName = dialog.getStorageName();
 		String remark = "";
 		if (resultStore.hadCollision() && dialog.getCurrentPermutation() == null) {
 			remark = "Select a permutation to resolve remaining hashes.";
 		}
-
-		int id = currentProgram.startTransaction(String.format("updating enumeration %s", hashStorageName));
-		dataTypeFactory.commit(hashStorage);
-
-		currentProgram.endTransaction(id, true);
+		dataTypeFactory.commitResults(hashStorageName, resultStore);
 		return String.format("Added %d values to data type '%s'. %s", resolvedResults.size(),
-				hashStorage.getDisplayName(), remark).trim();
+				hashStorageName, remark).trim();
 	}
 
 	private long transformHash(long hash) throws ScriptException {
