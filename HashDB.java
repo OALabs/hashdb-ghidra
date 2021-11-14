@@ -52,6 +52,9 @@ import docking.widgets.label.GDLabel;
 import docking.widgets.table.TableSortState;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressRange;
+import ghidra.program.model.data.AbstractIntegerDataType;
+import ghidra.program.model.data.Array;
+import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeConflictHandler;
@@ -67,6 +70,7 @@ import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.UnsignedLongLongDataType;
 import ghidra.program.model.listing.Data;
 import ghidra.program.model.listing.Instruction;
+import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
 import ghidra.program.model.pcode.Varnode;
@@ -851,27 +855,30 @@ public class HashDB extends GhidraScript {
 
 	public void run() throws Exception {
 		showDialog();
+		LinkedHashMap<Long, Address> hashes = new LinkedHashMap<Long, Address>();
 		if (currentSelection != null) {
-			HashMap<Long, Address> hashes = new HashMap<Long, Address>();
+			long nextCheckpoint = currentSelection.getMinAddress().getOffset();
 			for (AddressRange addressRange : currentSelection.getAddressRanges(true)) {
 				for (Address address : addressRange) {
-					long hashValue;
-					try {
-						hashValue = getHashAt(address);
-					} catch (NotFoundException e) {
+					if (address.getOffset() < nextCheckpoint)
 						continue;
+					try {
+						nextCheckpoint = getHashesAt(address, hashes).getOffset();
+					} catch (Exception e) {
+						logDebugMessage(String.format("Error parsing data at 0x%08X:", address.getOffset()), e); 
 					}
-					hashes.put(hashValue, address);
 				}
 			}
-			addHashes(hashes);
 		} else {
 			try {
-				addHash(currentAddress, getSelectedHash());
+				getHashesAtCurrentLocation(hashes);
 			} catch (Exception e) {
 				logDebugMessage("Error looking for hash values to add:", e);
 				return;
 			}
+		}
+		if (hashes.size() > 0) {
+			addHashes(hashes);
 		}
 	}
 
@@ -1213,6 +1220,7 @@ public class HashDB extends GhidraScript {
 		long taskTotal = tm.getMaximum();
 		String algorithm = dialog.getCurrentHashAlgorithm();
 		String permutation = dialog.getCurrentPermutation();
+		HashSet<String> observedPermuations = new HashSet<String>();
 		HashResolutionResultStore resultStore = new HashResolutionResultStore();
 
 		if (algorithm == null) {
@@ -1254,7 +1262,10 @@ public class HashDB extends GhidraScript {
 					permutation);
 
 			for (HashDBApi.HashInfo hi : resolved) {
-				dialog.addNewPermutation(hi.permutation, true);
+				if (!observedPermuations.contains(hi.permutation)) {
+					observedPermuations.add(hi.permutation);
+					dialog.addNewPermutation(hi.permutation, true);
+				}
 			}
 
 			if (resolved.size() == 0) {
@@ -1423,44 +1434,70 @@ public class HashDB extends GhidraScript {
 			return this.resolution;
 		}
 	}
-
-	private long getHashAt(Address address) throws NotFoundException {
+	
+	private Address getHashesAt(Address address, HashMap<Long, Address> hashes) throws NotFoundException {
 		Data data = currentProgram.getListing().getDataAt(address);
 		if (data != null) {
-			try {
-				return data.getBigInteger(0, data.getDataType().getLength(), false).longValue();
-			} catch (MemoryAccessException e) {
+			DataType dt = data.getDataType();
+			if (dt instanceof Array) {
+				Array array = (Array) dt;
+				int elementSize = array.getElementLength();
+				logDebugMessage(String.format(
+						"Parsing array containing %d hash values (%d bit each).",
+						array.getNumElements(),
+						elementSize * 8
+				));
+				for (int offset = 0; offset < array.getLength(); offset += elementSize) {
+					long hash;
+					try {
+						hash = data.getBigInteger(offset, elementSize, false).longValue();
+					} catch (MemoryAccessException e) {
+						throw new NotFoundException();
+					}
+					hashes.put(hash, address.add(offset));
+				}
+				return address.add(array.getLength());	
+			}
+			if (dt instanceof AbstractIntegerDataType) {
+				try {
+					hashes.put(data.getBigInteger(0, data.getDataType().getLength(), false).longValue(), address);
+				} catch (MemoryAccessException e) {
+					throw new NotFoundException();
+				}
+				return address.add(data.getLength());
 			}
 		}
 		throw new NotFoundException();
 	}
 
-	private long getSelectedHash() throws Exception {
+	private void getHashesAtCurrentLocation(HashMap<Long, Address> hashes) throws Exception {
 		// First try to read the value of defined or undefined data. This covers many
 		// different types of locations where the cursor could be in the data view.
 		try {
-			return getHashAt(currentLocation.getAddress());
+			getHashesAt(currentLocation.getAddress(), hashes);
 		} catch (NotFoundException e) {
-		}
-		if (currentLocation instanceof DecompilerLocation) {
-			Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
-			if (varNode == null || !varNode.isConstant())
-				throw new Exception("You have to select a constant.");
-			return varNode.getOffset();
-		} else if (currentLocation instanceof OperandFieldLocation) {
-			OperandFieldLocation opLoc = (OperandFieldLocation) currentLocation;
-			Address opAddress = opLoc.getAddress();
-			Instruction instruction = currentProgram.getListing().getInstructionAt(opAddress);
-			if (instruction == null)
-				throw new Exception("Operand selected, but no instruction or data found.");
-			Object[] args = instruction.getOpObjects(opLoc.getOperandIndex());
-			int index = opLoc.getSubOperandIndex();
-			if (index < args.length && args[index] instanceof Scalar)
-				return ((Scalar) args[index]).getUnsignedValue();
-			throw new Exception("The selection is not a scalar value.");
-		} else {
-			throw new Exception(String.format("Don't know how to handle program location of type %s",
-					currentLocation.getClass().getSimpleName()));
+			if (currentLocation instanceof DecompilerLocation) {
+				Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
+				if (varNode == null || !varNode.isConstant())
+					throw new Exception("You have to select a constant.");
+				hashes.put(varNode.getOffset(), varNode.getAddress());
+			} else if (currentLocation instanceof OperandFieldLocation) {
+				OperandFieldLocation opLoc = (OperandFieldLocation) currentLocation;
+				Address opAddress = opLoc.getAddress();
+				Instruction instruction = currentProgram.getListing().getInstructionAt(opAddress);
+				if (instruction == null)
+					throw new Exception("Operand selected, but no instruction or data found.");
+				Object[] args = instruction.getOpObjects(opLoc.getOperandIndex());
+				int index = opLoc.getSubOperandIndex();
+				if (index < args.length && args[index] instanceof Scalar) {
+					Scalar scalar = (Scalar) args[index]; 
+					hashes.put(scalar.getUnsignedValue(), opAddress);
+				}
+				throw new Exception("The selection is not a scalar value.");
+			} else {
+				throw new Exception(String.format("Don't know how to handle program location of type %s",
+						currentLocation.getClass().getSimpleName()));
+			}
 		}
 	}
 }
