@@ -144,19 +144,37 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
+		/*
+		 * Example Responses:
+		 *
+		 * API Hash: {"hashes": [{"hash": 2937175076, "string": {"string":
+		 * "RtlFreeHeap", "is_api": true, "permutation": "api", "api": "RtlFreeHeap",
+		 * "modules": ["ntdll"]}}]}
+		 *
+		 * Non-API Hash: {"hashes": [{"hash": 2227199552, "string": {"string":
+		 * "ntdll.dll", "is_api": false}}]}
+		 */
 		private ArrayList<HashInfo> parseHashInfoFromJson(String httpResponse) {
+			println(httpResponse);
 			JsonObject response = JsonParser.parseString(httpResponse).getAsJsonObject();
 			ArrayList<HashInfo> ret = new ArrayList<HashInfo>();
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
-				JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
-				String[] modules = new String[modulesArray.size()];
-				for (int i = 0; i < modules.length; i++) {
-					modules[i] = modulesArray.get(i).getAsString();
+				boolean isApi = stringInfo.get("is_api").getAsBoolean();
+				String[] modules = new String[0];
+				String permutation = null;
+				String apiName = null;
+				if (isApi) {
+					permutation = stringInfo.get("permutation").getAsString();
+					apiName = stringInfo.get("api").getAsString();
+					JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
+					modules = new String[modulesArray.size()];
+					for (int i = 0; i < modules.length; i++) {
+						modules[i] = modulesArray.get(i).getAsString();
+					}
 				}
-				ret.add(new HashInfo(hashObject.get("hash").getAsLong(), stringInfo.get("api").getAsString(),
-						stringInfo.get("permutation").getAsString(), modules, stringInfo.get("is_api").getAsBoolean()));
+				ret.add(new HashInfo(hashObject.get("hash").getAsLong(), apiName, permutation, modules, isApi));
 			}
 			return ret;
 		}
@@ -1244,7 +1262,7 @@ public class HashDB extends GhidraScript {
 			ArrayList<HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k], permutation);
 
 			for (HashDBApi.HashInfo hi : resolved) {
-				if (!observedPermuations.contains(hi.permutation)) {
+				if (hi.isApi && !observedPermuations.contains(hi.permutation)) {
 					observedPermuations.add(hi.permutation);
 					dialog.addNewPermutation(hi.permutation, true);
 				}
