@@ -367,7 +367,24 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void addNewPermutation(String permutation, boolean selectIt) {
-			addToComboBox(permutationField, permutation, selectIt);
+            int index = 0;
+            int count = permutationField.getItemCount();
+            boolean exists = false;
+            permutation = permutation.trim();
+            for (index = 0; index < count; index++) {
+            	int stringDiff = permutation.compareTo(permutationField.getItemAt(index));
+            	if (stringDiff == 0) {
+            		exists = true;
+            		break;
+            	}
+            	else if (stringDiff < 0) {
+		   	 		break;
+		   	 	}
+		    }
+			if (!exists)
+				permutationField.insertItemAt(permutation, index);
+			if (selectIt)
+				permutationField.setSelectedItem(permutation);
 		}
 
 		public String getCurrentPermutation() {
