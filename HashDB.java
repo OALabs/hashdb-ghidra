@@ -155,7 +155,10 @@ public class HashDB extends GhidraScript {
 					case Merge:
 						println("None-API strategy not implemented yet");
 						continue;
-					case Separate:
+					case SeparateEnum:
+						println("None-API strategy not implemented yet");
+						continue;
+					case SeparateStruct:
 						println("None-API strategy not implemented yet");
 						continue;
 					}
@@ -268,8 +271,17 @@ public class HashDB extends GhidraScript {
 	}
 
 	public enum NoneApiStrategy {
-		Ignore, Merge, Separate
+		Ignore, Merge, SeparateEnum, SeparateStruct
 	}
+
+	public static LinkedHashMap<String, NoneApiStrategy> NoneApiStrategyCaptions = new LinkedHashMap<String, NoneApiStrategy>() {
+		{
+			put("Ignore", NoneApiStrategy.Ignore);
+			put("Add to same enum/struct", NoneApiStrategy.Merge);
+			put("Collect in separate enum", NoneApiStrategy.SeparateEnum);
+			put("Collect in separate struct", NoneApiStrategy.SeparateStruct);
+		}
+	};
 
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
@@ -313,15 +325,7 @@ public class HashDB extends GhidraScript {
 			if (noneApiStrategy == null) {
 				return NoneApiStrategy.Ignore;
 			}
-			if (noneApiStrategy.contentEquals("Ignore")) {
-				return NoneApiStrategy.Ignore;
-			} else if (noneApiStrategy.contentEquals("Add to same enum/struct")) {
-				return NoneApiStrategy.Merge;
-			} else if (noneApiStrategy.contentEquals("Collect in second enum")) {
-				return NoneApiStrategy.Separate;
-			} else {
-				throw new IllegalStateException();
-			}
+			return NoneApiStrategyCaptions.get(noneApiStrategy);
 		}
 
 		public OutputMethod getOutputMethod() throws IllegalStateException {
@@ -440,7 +444,8 @@ public class HashDB extends GhidraScript {
 		}
 
 		public GuiState getCurrentState() {
-			boolean storeNoneApiInSeparateEnum = getNoneApiStrategy() == NoneApiStrategy.Separate;
+			boolean storeNoneApiInSeparateEnum = getNoneApiStrategy() == NoneApiStrategy.SeparateEnum
+					&& getNoneApiStrategy() == NoneApiStrategy.SeparateStruct;
 			if (transformationIsNotInvertibleCheckbox.isSelected())
 				return new GuiState(TransformInvertibility.NotInvertible, storeNoneApiInSeparateEnum);
 			if (transformationIsSelfInverseCheckbox.isSelected())
@@ -667,7 +672,8 @@ public class HashDB extends GhidraScript {
 			radioPanel.add(outputEnumRadio, BorderLayout.WEST);
 			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
 			tc.addRow(radioPanel);
-			String[] strategyNames = { "Ignore", "Add to same enum/struct", "Collect in second enum" };
+
+			String[] strategyNames = NoneApiStrategyCaptions.keySet().toArray(new String[0]);
 			noneApiStrategyComboBox = new JComboBox<String>(strategyNames);
 			noneApiStrategyComboBox.setSelectedItem("Ignore");
 			tc.addRow("What to do with none-API responses", noneApiStrategyComboBox);
