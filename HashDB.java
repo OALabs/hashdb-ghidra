@@ -257,7 +257,7 @@ public class HashDB extends GhidraScript {
 
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
-		private JTextField secondEnumNameTextField;
+		private JTextField nonApiResolutionEnumName;
 		private JTextField transformationInverseTextField;
 		private JComboBox<String> transformationTextField;
 		private JComboBox<String> hashAlgorithmField;
@@ -382,6 +382,10 @@ public class HashDB extends GhidraScript {
 
 		public String getStorageName() {
 			return enumNameTextField.getText();
+		}
+
+		public String getNonApiEnumName() {
+			return nonApiResolutionEnumName.getText();
 		}
 
 		public boolean resolveEntireModules() {
@@ -630,8 +634,8 @@ public class HashDB extends GhidraScript {
 			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
 			tc.addRow(radioPanel);
 
-			secondEnumNameTextField = new JTextField("HashDBStrings");
-			tc.addRow("Enum for non-API resolutions", secondEnumNameTextField);
+			nonApiResolutionEnumName = new JTextField("HashDBStrings");
+			tc.addRow("Enum for non-API resolutions", nonApiResolutionEnumName);
 
 			return tc.getMain();
 		}
@@ -863,8 +867,8 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		private DataType getOutputType(String hashStorageName) {
-			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
+		private DataType getOutputType(String name) {
+			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", name));
 			if (hashStorage != null) {
 				if (strategy == OutputMethod.Enum) {
 					DataType copy = hashStorage.copy(dataTypeManager);
@@ -872,18 +876,17 @@ public class HashDB extends GhidraScript {
 						return copy;
 					}
 				}
-				logDebugMessage(
-						String.format("A type named '%s' already exists; it will be overwritten.", hashStorageName));
+				logDebugMessage(String.format("A type named '%s' already exists; it will be overwritten.", name));
 			}
-			return makeNew(hashStorageName);
+			return makeNew(name);
 		}
 
 		private void putOutputType(DataType hashStorage) {
 			dataTypeManager.addDataType(hashStorage, DataTypeConflictHandler.REPLACE_HANDLER);
 		}
 
-		private DataType commitApiResultsToEnum(HashResolutionResultStore store, String hashStorageName) {
-			DataType hashStorage = getOutputType(hashStorageName);
+		private DataType commitApiResultsToEnum(HashResolutionResultStore store, String name) {
+			DataType hashStorage = getOutputType(name);
 			EnumDataType dst = (EnumDataType) hashStorage;
 			for (HashResolutionResult result : store.resolvedResults()) {
 				String apiName = result.getApiName();
@@ -891,8 +894,8 @@ public class HashDB extends GhidraScript {
 					long oldValue = dst.getValue(apiName);
 					if (oldValue != result.hashBeforeTransformation) {
 						logDebugMessage(String.format(
-								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.",
-								hashStorageName, apiName, oldValue, result.hashBeforeTransformation));
+								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.", name,
+								apiName, oldValue, result.hashBeforeTransformation));
 					}
 				} catch (NoSuchElementException e) {
 					dst.add(result.getApiName(), result.hashBeforeTransformation);
@@ -901,8 +904,8 @@ public class HashDB extends GhidraScript {
 			return dst;
 		}
 
-		private DataType commitApiResultsToStruct(HashResolutionResultStore store, String hashStorageName) {
-			StructureDataType dst = (StructureDataType) getOutputType(hashStorageName);
+		private DataType commitApiResultsToStruct(HashResolutionResultStore store, String name) {
+			StructureDataType dst = (StructureDataType) getOutputType(name);
 			for (HashResolutionResult result : store.allResults()) {
 				DataType entryDataType = null;
 				String apiName = null;
@@ -917,7 +920,7 @@ public class HashDB extends GhidraScript {
 					entryDataType = new FunctionDefinitionDataType("FARPROC");
 				}
 				entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
-				logDebugMessage(String.format("adding %s to %s", entryDataType.toString(), hashStorageName));
+				logDebugMessage(String.format("adding %s to %s", entryDataType.toString(), name));
 				if (apiName == null) {
 					dst.add(entryDataType);
 				} else {
@@ -927,22 +930,26 @@ public class HashDB extends GhidraScript {
 			return dst;
 		}
 
-		public void commitApiResults(String hashStorageName, HashResolutionResultStore store) {
+		public void commitApiResults(String name, HashResolutionResultStore store) {
 			DataType dst = null;
 			switch (strategy) {
 			case Enum:
-				dst = commitApiResultsToEnum(store, hashStorageName);
+				dst = commitApiResultsToEnum(store, name);
 				break;
 			case Struct:
-				dst = commitApiResultsToStruct(store, hashStorageName);
+				dst = commitApiResultsToStruct(store, name);
 				break;
 			}
-			int id = currentProgram.startTransaction(String.format("updating data type '%s'", hashStorageName));
+			int id = currentProgram.startTransaction(String.format("updating data type '%s'", name));
 			try {
 				putOutputType(dst);
 			} finally {
 				currentProgram.endTransaction(id, true);
 			}
+		}
+
+		public void commitNonApiResults(String name, HashResolutionResultStore store) {
+			// TODO
 		}
 
 		public int _onHashResolution(DataType hashStorage, HashDBApi.HashInfo hashInfo, long hashBeforeTransformation) {
@@ -1323,10 +1330,12 @@ public class HashDB extends GhidraScript {
 	private String processResult(HashResolutionResultStore resultStore) throws Exception {
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
 		String hashStorageName = dialog.getStorageName();
+		String nonApiEnumName = dialog.getNonApiEnumName();
 		String remark = "";
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			remark = " Select a permutation to resolve remaining hashes.";
 		}
+		dataTypeFactory.commitNonApiResults(nonApiEnumName, resultStore);
 		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
 		return String
 				.format("Added %d values to data type '%s'.%s", resultStore.resolvedCount(), hashStorageName, remark)
