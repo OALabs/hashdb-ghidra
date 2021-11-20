@@ -1200,8 +1200,7 @@ public class HashDB extends GhidraScript {
 
 	private String guessAlgorithm(TaskMonitor tm, long taskHunt, long[] hashesAfterTransform) throws Exception {
 		tm.setMessage("guessing hash function");
-		HashDBApi api = new HashDBApi();
-		ArrayList<String> algorithms = api.hunt(hashesAfterTransform, dialog.getAlgorithmThreshold());
+		ArrayList<String> algorithms = new HashDBApi().hunt(hashesAfterTransform, dialog.getAlgorithmThreshold());
 		if (algorithms.size() == 0) {
 			throw new ShowErrorInUi("could not identify any hashing algorithms");
 		} else if (algorithms.size() == 1) {
