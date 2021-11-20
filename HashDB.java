@@ -894,13 +894,18 @@ public class HashDB extends GhidraScript {
 		}
 
 		private DataType getOutputType(String hashStorageName) {
-			if (strategy == OutputMethod.Enum) {
-				DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
-				if (hashStorage != null) {
+			DataType hashStorage = dataTypeManager.getDataType(new DataTypePath("/HashDB", hashStorageName));
+			if (hashStorage != null) {
+				if (strategy == OutputMethod.Enum) {
 					DataType copy = hashStorage.copy(dataTypeManager); 
-					if (copy instanceof EnumDataType)
+					if (copy instanceof EnumDataType) {
 						return copy;
+					}
 				}
+				logDebugMessage(String.format(
+					"A type named '%s' already exists; it will be overwritten.",
+					hashStorageName
+				));
 			}
 			return makeNew(hashStorageName);
 		}
