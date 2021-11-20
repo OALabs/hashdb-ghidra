@@ -1122,7 +1122,7 @@ public class HashDB extends GhidraScript {
 			return store.get(hashAfterTransform);
 		}
 
-		public String prunePermuatations() throws Exception {
+		public String prunePermutations() throws Exception {
 			HashSet<String> matches = globallyMatchingPermutations();
 			if (matches.size() == 0) {
 				return null;
@@ -1309,7 +1309,7 @@ public class HashDB extends GhidraScript {
 
 		if (resultStore.hasCollisions()) {
 			tm.setMessage("pruning permutation collisions");
-			String match = resultStore.prunePermuatations();
+			String match = resultStore.prunePermutations();
 			if (match != null) {
 				for (int k = 0; k < hashesAfterTransform.length; k++) {
 					HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
