@@ -675,7 +675,7 @@ public class HashDB extends GhidraScript {
 
 			String[] strategyNames = NoneApiStrategyCaptions.keySet().toArray(new String[0]);
 			noneApiStrategyComboBox = new JComboBox<String>(strategyNames);
-			noneApiStrategyComboBox.setSelectedItem("Ignore");
+			noneApiStrategyComboBox.setSelectedItem(strategyNames[0]);
 			tc.addRow("What to do with none-API responses", noneApiStrategyComboBox);
 			noneApiStrategyComboBox.addActionListener(new ActionListener() {
 				public void actionPerformed(ActionEvent e) {
