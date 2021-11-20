@@ -1023,8 +1023,8 @@ public class HashDB extends GhidraScript {
 			case 0:
 				return HashResolutionResultType.NO_MATCHES_FOUND;
 			case 1:
-				return hashInfos.iterator().next().isApi ? HashResolutionResultType.NOT_AN_API_RESULT
-						: HashResolutionResultType.RESOLVED;
+				return hashInfos.iterator().next().isApi ? HashResolutionResultType.RESOLVED
+						: HashResolutionResultType.NOT_AN_API_RESULT;
 			default:
 				return HashResolutionResultType.HASH_COLLISION;
 			}
