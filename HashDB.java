@@ -468,6 +468,8 @@ public class HashDB extends GhidraScript {
 				protected String doInBackground() throws Exception {
 					try {
 						return resolveHashes(hashLocations, taskMonitor);
+					} catch (ShowErrorInUi e) {
+						return e.getMessage();
 					} catch (Exception e) {
 						logDebugMessage("Exception during resolution:", e);
 						return "unexpected error during resolution, see log";
@@ -627,7 +629,7 @@ public class HashDB extends GhidraScript {
 			radioPanel.add(outputEnumRadio, BorderLayout.WEST);
 			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
 			tc.addRow(radioPanel);
-			
+
 			secondEnumNameTextField = new JTextField("HashDBStrings");
 			tc.addRow("Enum for non-API resolutions", secondEnumNameTextField);
 
@@ -1127,6 +1129,10 @@ public class HashDB extends GhidraScript {
 			return globallyMatchingPermutations;
 		}
 
+		public long resolvedCount() {
+			return resolvedResults().size();
+		}
+
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : allResults()) {
@@ -1151,56 +1157,71 @@ public class HashDB extends GhidraScript {
 		}
 	}
 
-	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
-		HashDBApi api = new HashDBApi();
-		long[] hashesAfterTransform = new long[hashLocations.size()];
+	public class ShowErrorInUi extends Exception {
+		public ShowErrorInUi(String errorMessage) {
+			super(errorMessage);
+		}
+	}
+
+	private long[] transformHashes(ArrayList<HashDB.HashLocation> hashLocations) throws Exception {
+		long[] ret = new long[hashLocations.size()];
 		for (int k = 0; k < hashLocations.size(); k++) {
 			long baseHash = hashLocations.get(k).getHashAsLong();
-			hashesAfterTransform[k] = transformHash(baseHash);
+			ret[k] = transformHash(baseHash);
 			if (dialog.isTransformationInvertible()) {
-				long inverse = invertHashTransformation(hashesAfterTransform[k]);
+				long inverse = invertHashTransformation(ret[k]);
 				if (inverse != baseHash) {
 					if (!dialog.resolveEntireModules()) {
 						dialog.setTransformationNotInvertible();
 						logDebugMessage("This transformation is not invertible; I fixed it for you.");
 					} else {
-						return String.format("Transformation could not be inverted for hash 0x%08X.", baseHash);
+						throw new ShowErrorInUi(
+								String.format("Transformation could not be inverted for hash 0x%08X.", baseHash));
 					}
 				}
 			}
 			if (GUI_DEBUGGING) {
-				logDebugMessage(
-						String.format("Translated hash for 0x%08X is 0x%08X.", baseHash, hashesAfterTransform[k]));
+				logDebugMessage(String.format("Translated hash for 0x%08X is 0x%08X.", baseHash, ret[k]));
 			}
 		}
+		return ret;
+	}
+
+	private long initTaskMonitor(TaskMonitor tm) {
 		long taskTotal = tm.getMaximum();
-		String algorithm = dialog.getCurrentHashAlgorithm();
-		String permutation = dialog.getCurrentPermutation();
-		HashSet<String> observedPermuations = new HashSet<String>();
-		HashResolutionResultStore resultStore = new HashResolutionResultStore();
-
-		if (algorithm == null) {
-			long taskHunt = taskTotal / 2;
-			if (taskHunt < 1) {
-				taskHunt = 1;
-			}
-			taskTotal += taskHunt;
-			tm.setMaximum(taskTotal);
-			tm.setMessage("guessing hash function");
-			ArrayList<String> algorithms = api.hunt(hashesAfterTransform, dialog.getAlgorithmThreshold());
-			if (algorithms.size() == 0) {
-				return "could not identify any hashing algorithms";
-			} else if (algorithms.size() == 1) {
-				algorithm = algorithms.iterator().next();
-				dialog.addNewHashAlgorithm(algorithm, true);
-			} else {
-				for (String a : algorithms)
-					dialog.addNewHashAlgorithm(a, false);
-				return "please select an algorithm";
-			}
-			tm.incrementProgress(taskHunt);
+		long taskHunt = taskTotal / 2;
+		if (taskHunt < 1) {
+			taskHunt = 1;
 		}
+		taskTotal += taskHunt;
+		tm.setMaximum(taskTotal);
+		return taskHunt;
+	}
 
+	private String guessAlgorithm(TaskMonitor tm, long taskHunt, long[] hashesAfterTransform) throws Exception {
+		tm.setMessage("guessing hash function");
+		HashDBApi api = new HashDBApi();
+		ArrayList<String> algorithms = api.hunt(hashesAfterTransform, dialog.getAlgorithmThreshold());
+		if (algorithms.size() == 0) {
+			throw new ShowErrorInUi("could not identify any hashing algorithms");
+		} else if (algorithms.size() == 1) {
+			String algorithm = algorithms.iterator().next();
+			dialog.addNewHashAlgorithm(algorithm, true);
+			tm.incrementProgress(taskHunt);
+			return algorithm;
+		} else {
+			for (String a : algorithms)
+				dialog.addNewHashAlgorithm(a, false);
+			throw new ShowErrorInUi("please select an algorithm");
+		}
+	}
+
+	private HashResolutionResultStore createResultStore(TaskMonitor tm, String algorithm,
+			ArrayList<HashDB.HashLocation> hashLocations, long[] hashesAfterTransform) throws Exception {
+		HashDBApi api = new HashDBApi();
+		HashResolutionResultStore resultStore = new HashResolutionResultStore();
+		HashSet<String> observedPermuations = new HashSet<String>();
+		String permutation = dialog.getCurrentPermutation();
 		for (int k = 0; k < hashesAfterTransform.length; k++) {
 			HashLocation tableEntry = hashLocations.get(k);
 			if (tm.isCancelled()) {
@@ -1262,38 +1283,54 @@ public class HashDB extends GhidraScript {
 			tm.incrementProgress(1);
 		}
 
-		if (resultStore.hasCollisions()) {
-			tm.setMessage("pruning permutation collisions");
-			String match = resultStore.prunePermutations();
-			if (match != null) {
-				for (int k = 0; k < hashesAfterTransform.length; k++) {
-					HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
-					if (result.isResolved()) {
-						HashLocation tableEntry = hashLocations.get(k);
-						tableEntry.resolution = result.getSingleHashInfo().apiName;
-					}
-				}
-				dialog.addNewPermutation(match, true);
-				logDebugMessage(String.format("The permutation '%s' was auto-selected because it matched all.", match));
-			} else {
-				logDebugMessage("Permutations could not be disambiguated, please select one manually.");
-			}
-		}
+		return resultStore;
+	}
 
+	private void handleCollisions(TaskMonitor tm, ArrayList<HashDB.HashLocation> hashLocations,
+			long[] hashesAfterTransform, HashResolutionResultStore resultStore) throws Exception {
+		tm.setMessage("pruning permutation collisions");
+		String match = resultStore.prunePermutations();
+		if (match != null) {
+			for (int k = 0; k < hashesAfterTransform.length; k++) {
+				HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
+				if (result.isResolved()) {
+					HashLocation tableEntry = hashLocations.get(k);
+					tableEntry.resolution = result.getSingleHashInfo().apiName;
+				}
+			}
+			dialog.addNewPermutation(match, true);
+			logDebugMessage(String.format("The permutation '%s' was auto-selected because it matched all.", match));
+		} else {
+			logDebugMessage("Permutations could not be disambiguated, please select one manually.");
+		}
+	}
+
+	private String resolveHashes(ArrayList<HashDB.HashLocation> hashLocations, TaskMonitor tm) throws Exception {
+		long[] hashesAfterTransform = transformHashes(hashLocations);
+		String algorithm = dialog.getCurrentHashAlgorithm();
+
+		long taskHunt = initTaskMonitor(tm);
+		if (algorithm == null) {
+			algorithm = guessAlgorithm(tm, taskHunt, hashesAfterTransform);
+		}
+		HashResolutionResultStore resultStore = createResultStore(tm, algorithm, hashLocations, hashesAfterTransform);
+		if (resultStore.hasCollisions()) {
+			handleCollisions(tm, hashLocations, hashesAfterTransform, resultStore);
+		}
 		tm.setMessage(String.format("updating data type %s", dialog.getStorageName()));
 		return processResult(resultStore);
 	}
 
 	private String processResult(HashResolutionResultStore resultStore) throws Exception {
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
-		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
 		String hashStorageName = dialog.getStorageName();
 		String remark = "";
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
-			remark = "Select a permutation to resolve remaining hashes.";
+			remark = " Select a permutation to resolve remaining hashes.";
 		}
 		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
-		return String.format("Added %d values to data type '%s'. %s", resolvedResults.size(), hashStorageName, remark)
+		return String
+				.format("Added %d values to data type '%s'.%s", resultStore.resolvedCount(), hashStorageName, remark)
 				.trim();
 	}
 
