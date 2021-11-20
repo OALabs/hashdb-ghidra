@@ -1011,36 +1011,6 @@ public class HashDB extends GhidraScript {
 		public void commitNonApiResults(String name, HashResolutionResultStore store) {
 			// TODO
 		}
-
-		public int _onHashResolution(DataType hashStorage, HashDBApi.HashInfo hashInfo, long hashBeforeTransformation) {
-			try {
-				switch (strategy) {
-				case Enum:
-					EnumDataType et = (EnumDataType) hashStorage;
-					et.add(hashInfo.apiName, hashBeforeTransformation);
-					break;
-				case Struct:
-					StructureDataType st = (StructureDataType) hashStorage;
-					DataType entryDataType = getDataType(hashInfo.apiName, null);
-					if (entryDataType == null) {
-						entryDataType = getDataType("FARPROC", null);
-					}
-					if (entryDataType == null) {
-						entryDataType = new FunctionDefinitionDataType("FARPROC");
-					}
-					entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
-					st.add(entryDataType, hashInfo.apiName, "");
-					break;
-				}
-				return 1;
-			} catch (IllegalArgumentException e) {
-				if (GUI_DEBUGGING) {
-					logDebugMessage(String.format("could not add %s (0x%08X) to %s: %s", hashInfo.apiName,
-							hashBeforeTransformation, hashStorage.getDisplayName(), e.toString()));
-				}
-				return 0;
-			}
-		}
 	}
 
 	private enum HashResolutionResultType {
