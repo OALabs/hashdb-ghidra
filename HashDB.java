@@ -73,6 +73,7 @@ import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Listing;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.PcodeOp;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
 
@@ -1480,7 +1481,7 @@ public class HashDB extends GhidraScript {
 				Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
 				if (varNode == null || !varNode.isConstant())
 					throw new Exception("You have to select a constant.");
-				hashes.put(varNode.getOffset(), varNode.getAddress());
+				hashes.put(varNode.getOffset(), varNode.getPCAddress());
 			} else if (currentLocation instanceof OperandFieldLocation) {
 				OperandFieldLocation opLoc = (OperandFieldLocation) currentLocation;
 				Address opAddress = opLoc.getAddress();
@@ -1490,7 +1491,7 @@ public class HashDB extends GhidraScript {
 				Object[] args = instruction.getOpObjects(opLoc.getOperandIndex());
 				int index = opLoc.getSubOperandIndex();
 				if (index < args.length && args[index] instanceof Scalar) {
-					Scalar scalar = (Scalar) args[index]; 
+					Scalar scalar = (Scalar) args[index];
 					hashes.put(scalar.getUnsignedValue(), opAddress);
 				}
 				throw new Exception("The selection is not a scalar value.");
