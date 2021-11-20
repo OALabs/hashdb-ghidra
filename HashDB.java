@@ -155,7 +155,6 @@ public class HashDB extends GhidraScript {
 		 * "ntdll.dll", "is_api": false}}]}
 		 */
 		private ArrayList<HashInfo> parseHashInfoFromJson(String httpResponse) {
-			println(httpResponse);
 			JsonObject response = JsonParser.parseString(httpResponse).getAsJsonObject();
 			ArrayList<HashInfo> ret = new ArrayList<HashInfo>();
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
