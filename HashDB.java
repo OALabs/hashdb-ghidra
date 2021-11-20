@@ -1186,15 +1186,6 @@ public class HashDB extends GhidraScript {
 			return store.values();
 		}
 
-		public boolean hadCollision() {
-			for (HashResolutionResult result : allResults()) {
-				if (result.isCollision()) {
-					return true;
-				}
-			}
-			return false;
-		}
-
 		public boolean hasCollisions() {
 			for (HashResolutionResult result : allResults()) {
 				if (result.isCollision()) {
@@ -1343,7 +1334,7 @@ public class HashDB extends GhidraScript {
 		ArrayList<HashResolutionResult> resolvedResults = resultStore.resolvedResults();
 		String hashStorageName = dialog.getStorageName();
 		String remark = "";
-		if (resultStore.hadCollision() && dialog.getCurrentPermutation() == null) {
+		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			remark = "Select a permutation to resolve remaining hashes.";
 		}
 		dataTypeFactory.commitResults(hashStorageName, resultStore);
