@@ -144,15 +144,29 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		/*
+		/*-
 		 * Example Responses:
 		 *
-		 * API Hash: {"hashes": [{"hash": 2937175076, "string": {"string":
-		 * "RtlFreeHeap", "is_api": true, "permutation": "api", "api": "RtlFreeHeap",
-		 * "modules": ["ntdll"]}}]}
+		 * API Hash: 
+		 * {"hashes": [{
+		 *   "hash": 2937175076,
+		 *   "string": {
+		 *     "is_api": true,
+		 *     "string": "RtlFreeHeap",
+		 *     "permutation": "api",
+		 *     "api": "RtlFreeHeap",
+		 * 	   "modules": ["ntdll"]
+		 *   }
+		 * }]}
 		 *
-		 * Non-API Hash: {"hashes": [{"hash": 2227199552, "string": {"string":
-		 * "ntdll.dll", "is_api": false}}]}
+		 * Non-API Hash:
+		 * {"hashes": [{
+		 *   "hash": 2227199552,
+		 *   "string": {
+		 *     "is_api": false
+		 *     "string": "ntdll.dll",
+		 *   }
+		 * }]}
 		 */
 		private ArrayList<HashInfo> parseHashInfoFromJson(String httpResponse) {
 			JsonObject response = JsonParser.parseString(httpResponse).getAsJsonObject();
