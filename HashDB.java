@@ -172,30 +172,6 @@ public class HashDB extends GhidraScript {
 			public abstract String getResolutionName();
 		}
 
-		/*-
-		 * Example Responses:
-		 *
-		 * API Hash: 
-		 * {"hashes": [{
-		 *   "hash": 2937175076,
-		 *   "string": {
-		 *     "is_api": true,
-		 *     "string": "RtlFreeHeap",
-		 *     "permutation": "api",
-		 *     "api": "RtlFreeHeap",
-		 * 	   "modules": ["ntdll"]
-		 *   }
-		 * }]}
-		 *
-		 * Non-API Hash:
-		 * {"hashes": [{
-		 *   "hash": 2227199552,
-		 *   "string": {
-		 *     "is_api": false
-		 *     "string": "ntdll.dll",
-		 *   }
-		 * }]}
-		 */
 		private ArrayList<HashInfo> parseHashInfoFromJson(String httpResponse) {
 			JsonObject response = JsonParser.parseString(httpResponse).getAsJsonObject();
 			ArrayList<HashInfo> ret = new ArrayList<HashInfo>();
@@ -205,6 +181,19 @@ public class HashDB extends GhidraScript {
 				boolean isApi = stringInfo.get("is_api").getAsBoolean();
 				long hash = hashObject.get("hash").getAsLong();
 				if (isApi) {
+					/*-
+					 * Example Responses:
+					 * {"hashes": [{
+					 *   "hash": 2937175076,
+					 *   "string": {
+					 *     "is_api": true,
+					 *     "string": "RtlFreeHeap",
+					 *     "permutation": "api",
+					 *     "api": "RtlFreeHeap",
+					 * 	   "modules": ["ntdll"]
+					 *   }
+					 * }]}
+					 */
 					String apiName = stringInfo.get("api").getAsString();
 					String permutation = stringInfo.get("permutation").getAsString();
 					JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
@@ -214,6 +203,16 @@ public class HashDB extends GhidraScript {
 					}
 					ret.add(new ApiHashInfo(hash, apiName, permutation, modules));
 				} else {
+					/*-
+					 * Example Responses:
+					 * {"hashes": [{
+					 *   "hash": 2227199552,
+					 *   "string": {
+					 *     "is_api": false
+					 *     "string": "ntdll.dll",
+					 *   }
+					 * }]}
+					 */
 					ret.add(new NonApiHashInfo(hash, stringInfo.get("string").getAsString()));
 				}
 			}
