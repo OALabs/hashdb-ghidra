@@ -934,55 +934,64 @@ public class HashDB extends GhidraScript {
 			dataTypeManager.addDataType(hashStorage, DataTypeConflictHandler.REPLACE_HANDLER);
 		}
 
-		public void commitResults(String hashStorageName, HashResolutionResultStore store) {
+		private DataType commitApiResultsToEnum(HashResolutionResultStore store, String hashStorageName) {
 			DataType hashStorage = getOutputType(hashStorageName);
+			EnumDataType dst = (EnumDataType) hashStorage;
+			for (HashResolutionResult result : store.resolvedResults()) {
+				String apiName = result.getApiName();
+				try {
+					long oldValue = dst.getValue(apiName);
+					if (oldValue != result.hashBeforeTransformation) {
+						logDebugMessage(String.format(
+								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.",
+								hashStorageName, apiName, oldValue, result.hashBeforeTransformation));
+					}
+				} catch (NoSuchElementException e) {
+					dst.add(result.getApiName(), result.hashBeforeTransformation);
+				}
+			}
+			return dst;
+		}
+
+		private DataType commitApiResultsToStruct(HashResolutionResultStore store, String hashStorageName) {
+			StructureDataType dst = (StructureDataType) getOutputType(hashStorageName);
+			for (HashResolutionResult result : store.allResults()) {
+				DataType entryDataType = null;
+				String apiName = null;
+				if (result.isResolved()) {
+					apiName = result.getApiName();
+					entryDataType = getDataType(apiName, null);
+				}
+				if (entryDataType == null) {
+					entryDataType = getDataType("FARPROC", null);
+				}
+				if (entryDataType == null) {
+					entryDataType = new FunctionDefinitionDataType("FARPROC");
+				}
+				entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
+				logDebugMessage(String.format("adding %s to %s", entryDataType.toString(), hashStorageName));
+				if (apiName == null) {
+					dst.add(entryDataType);
+				} else {
+					dst.add(entryDataType, apiName, "");
+				}
+			}
+			return dst;
+		}
+
+		public void commitApiResults(String hashStorageName, HashResolutionResultStore store) {
+			DataType dst = null;
 			switch (strategy) {
-			case Enum: {
-				EnumDataType dst = (EnumDataType) hashStorage;
-				for (HashResolutionResult result : store.resolvedResults()) {
-					String apiName = result.getApiName();
-					try {
-						long oldValue = dst.getValue(apiName);
-						if (oldValue != result.hashBeforeTransformation) {
-							logDebugMessage(String.format(
-									"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.",
-									hashStorageName, apiName, oldValue, result.hashBeforeTransformation));
-						}
-					} catch (NoSuchElementException e) {
-						dst.add(result.getApiName(), result.hashBeforeTransformation);
-					}
-				}
+			case Enum:
+				dst = commitApiResultsToEnum(store, hashStorageName);
 				break;
-			}
-			case Struct: {
-				StructureDataType dst = (StructureDataType) hashStorage;
-				for (HashResolutionResult result : store.allResults()) {
-					DataType entryDataType = null;
-					String apiName = null;
-					if (result.isResolved()) {
-						apiName = result.getApiName();
-						entryDataType = getDataType(apiName, null);
-					}
-					if (entryDataType == null) {
-						entryDataType = getDataType("FARPROC", null);
-					}
-					if (entryDataType == null) {
-						entryDataType = new FunctionDefinitionDataType("FARPROC");
-					}
-					entryDataType = PointerDataType.getPointer(entryDataType, currentProgram.getDefaultPointerSize());
-					logDebugMessage(String.format("adding %s to %s", entryDataType.toString(), hashStorageName));
-					if (apiName == null) {
-						dst.add(entryDataType);
-					} else {
-						dst.add(entryDataType, apiName, "");
-					}
-				}
+			case Struct:
+				dst = commitApiResultsToStruct(store, hashStorageName);
 				break;
-			}
 			}
 			int id = currentProgram.startTransaction(String.format("updating data type '%s'", hashStorageName));
 			try {
-				putOutputType(hashStorage);
+				putOutputType(dst);
 			} finally {
 				currentProgram.endTransaction(id, true);
 			}
