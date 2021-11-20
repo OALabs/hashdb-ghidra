@@ -133,12 +133,14 @@ public class HashDB extends GhidraScript {
 			public String apiName;
 			public String permutation;
 			public String modules[];
+			public boolean isApi;
 
-			public HashInfo(long hash, String apiName, String permutation, String modules[]) {
+			public HashInfo(long hash, String apiName, String permutation, String modules[], boolean isApi) {
 				this.hash = hash;
 				this.apiName = apiName;
 				this.permutation = permutation;
 				this.modules = modules;
+				this.isApi = isApi;
 			}
 		}
 
@@ -148,28 +150,13 @@ public class HashDB extends GhidraScript {
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
-				if (!stringInfo.get("is_api").getAsBoolean()) {
-					switch (dialog.getNoneApiStrategy()) {
-					case Ignore:
-						continue;
-					case Merge:
-						println("None-API strategy not implemented yet");
-						continue;
-					case SeparateEnum:
-						println("None-API strategy not implemented yet");
-						continue;
-					case SeparateStruct:
-						println("None-API strategy not implemented yet");
-						continue;
-					}
-				}
 				JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
 				String[] modules = new String[modulesArray.size()];
 				for (int i = 0; i < modules.length; i++) {
 					modules[i] = modulesArray.get(i).getAsString();
 				}
 				ret.add(new HashInfo(hashObject.get("hash").getAsLong(), stringInfo.get("api").getAsString(),
-						stringInfo.get("permutation").getAsString(), modules));
+						stringInfo.get("permutation").getAsString(), modules, stringInfo.get("is_api").getAsBoolean()));
 			}
 			return ret;
 		}
@@ -258,11 +245,9 @@ public class HashDB extends GhidraScript {
 
 	public class GuiState {
 		public TransformInvertibility transformInvertibility;
-		public boolean storeNoneApiInSeparateEnum;
 
-		public GuiState(TransformInvertibility transformInvertibility, boolean storeNoneApiInSeparateEnum) {
+		public GuiState(TransformInvertibility transformInvertibility) {
 			this.transformInvertibility = transformInvertibility;
-			this.storeNoneApiInSeparateEnum = storeNoneApiInSeparateEnum;
 		}
 	}
 
@@ -270,22 +255,8 @@ public class HashDB extends GhidraScript {
 		Enum, Struct
 	}
 
-	public enum NoneApiStrategy {
-		Ignore, Merge, SeparateEnum, SeparateStruct
-	}
-
-	public static LinkedHashMap<String, NoneApiStrategy> NoneApiStrategyCaptions = new LinkedHashMap<String, NoneApiStrategy>() {
-		{
-			put("Ignore", NoneApiStrategy.Ignore);
-			put("Add to same enum/struct", NoneApiStrategy.Merge);
-			put("Collect in separate enum", NoneApiStrategy.SeparateEnum);
-			put("Collect in separate struct", NoneApiStrategy.SeparateStruct);
-		}
-	};
-
 	class HashTable extends TableChooserDialog {
 		private JTextField enumNameTextField;
-		private JComboBox<String> noneApiStrategyComboBox;
 		private JTextField secondEnumNameTextField;
 		private JTextField transformationInverseTextField;
 		private JComboBox<String> transformationTextField;
@@ -315,17 +286,6 @@ public class HashDB extends GhidraScript {
 		@Override
 		protected void setOkEnabled(boolean state) {
 			return;
-		}
-
-		public NoneApiStrategy getNoneApiStrategy() throws IllegalStateException {
-			if (noneApiStrategyComboBox == null) {
-				return NoneApiStrategy.Ignore;
-			}
-			String noneApiStrategy = getComboBoxValue(noneApiStrategyComboBox);
-			if (noneApiStrategy == null) {
-				return NoneApiStrategy.Ignore;
-			}
-			return NoneApiStrategyCaptions.get(noneApiStrategy);
 		}
 
 		public OutputMethod getOutputMethod() throws IllegalStateException {
@@ -444,13 +404,11 @@ public class HashDB extends GhidraScript {
 		}
 
 		public GuiState getCurrentState() {
-			boolean storeNoneApiInSeparateEnum = getNoneApiStrategy() == NoneApiStrategy.SeparateEnum
-					&& getNoneApiStrategy() == NoneApiStrategy.SeparateStruct;
 			if (transformationIsNotInvertibleCheckbox.isSelected())
-				return new GuiState(TransformInvertibility.NotInvertible, storeNoneApiInSeparateEnum);
+				return new GuiState(TransformInvertibility.NotInvertible);
 			if (transformationIsSelfInverseCheckbox.isSelected())
-				return new GuiState(TransformInvertibility.SelfInverse, storeNoneApiInSeparateEnum);
-			return new GuiState(TransformInvertibility.Manual, storeNoneApiInSeparateEnum);
+				return new GuiState(TransformInvertibility.SelfInverse);
+			return new GuiState(TransformInvertibility.Manual);
 		}
 
 		public void enableComponentsAccordingToState(GuiState guiState) {
@@ -471,9 +429,6 @@ public class HashDB extends GhidraScript {
 				resolveModulesCheckbox.setEnabled(true);
 				transformationIsSelfInverseCheckbox.setEnabled(true);
 				break;
-			}
-			if (secondEnumNameTextField != null) {
-				secondEnumNameTextField.setEnabled(guiState.storeNoneApiInSeparateEnum);
 			}
 		}
 
@@ -672,18 +627,9 @@ public class HashDB extends GhidraScript {
 			radioPanel.add(outputEnumRadio, BorderLayout.WEST);
 			radioPanel.add(outputStructRadio, BorderLayout.CENTER);
 			tc.addRow(radioPanel);
-
-			String[] strategyNames = NoneApiStrategyCaptions.keySet().toArray(new String[0]);
-			noneApiStrategyComboBox = new JComboBox<String>(strategyNames);
-			noneApiStrategyComboBox.setSelectedItem(strategyNames[0]);
-			tc.addRow("What to do with none-API responses", noneApiStrategyComboBox);
-			noneApiStrategyComboBox.addActionListener(new ActionListener() {
-				public void actionPerformed(ActionEvent e) {
-					enableComponentsAccordingToState(getCurrentState());
-				}
-			});
+			
 			secondEnumNameTextField = new JTextField("HashDBStrings");
-			tc.addRow("Name of separate enum", secondEnumNameTextField);
+			tc.addRow("Enum for non-API resolutions", secondEnumNameTextField);
 
 			return tc.getMain();
 		}
@@ -1075,7 +1021,7 @@ public class HashDB extends GhidraScript {
 			case 0:
 				return HashResolutionResultType.NO_MATCHES_FOUND;
 			case 1:
-				return (hashInfos.iterator().next().modules.length == 0) ? HashResolutionResultType.NOT_AN_API_RESULT
+				return hashInfos.iterator().next().isApi ? HashResolutionResultType.NOT_AN_API_RESULT
 						: HashResolutionResultType.RESOLVED;
 			default:
 				return HashResolutionResultType.HASH_COLLISION;
@@ -1346,7 +1292,7 @@ public class HashDB extends GhidraScript {
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			remark = "Select a permutation to resolve remaining hashes.";
 		}
-		dataTypeFactory.commitResults(hashStorageName, resultStore);
+		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
 		return String.format("Added %d values to data type '%s'. %s", resolvedResults.size(), hashStorageName, remark)
 				.trim();
 	}
