@@ -128,20 +128,47 @@ public class HashDB extends GhidraScript {
 			return ret;
 		}
 
-		public class HashInfo {
+		public class ApiHashInfo extends HashInfo {
+			public ApiHashInfo(long hash, String apiName, String permutation, String[] modules) {
+				super(hash, apiName, permutation, modules, null, true);
+			}
+
+			@Override
+			public String getResolutionName() {
+				return apiName;
+			}
+		}
+
+		public class NonApiHashInfo extends HashInfo {
+			public NonApiHashInfo(long hash, String freeText) {
+				super(hash, null, null, null, freeText, false);
+			}
+
+			@Override
+			public String getResolutionName() {
+				return freeText;
+			}
+		}
+
+		public abstract class HashInfo {
 			public long hash;
 			public String apiName;
 			public String permutation;
 			public String modules[];
+			public String freeText;
 			public boolean isApi;
 
-			public HashInfo(long hash, String apiName, String permutation, String modules[], boolean isApi) {
+			public HashInfo(long hash, String apiName, String permutation, String modules[], String freeText,
+					boolean isApi) {
 				this.hash = hash;
 				this.apiName = apiName;
 				this.permutation = permutation;
 				this.modules = modules;
+				this.freeText = freeText;
 				this.isApi = isApi;
 			}
+
+			public abstract String getResolutionName();
 		}
 
 		/*-
@@ -175,19 +202,19 @@ public class HashDB extends GhidraScript {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
 				boolean isApi = stringInfo.get("is_api").getAsBoolean();
-				String[] modules = new String[0];
-				String permutation = null;
-				String apiName = null;
+				long hash = hashObject.get("hash").getAsLong();
 				if (isApi) {
-					permutation = stringInfo.get("permutation").getAsString();
-					apiName = stringInfo.get("api").getAsString();
+					String apiName = stringInfo.get("api").getAsString();
+					String permutation = stringInfo.get("permutation").getAsString();
 					JsonArray modulesArray = stringInfo.get("modules").getAsJsonArray();
-					modules = new String[modulesArray.size()];
+					String[] modules = new String[modulesArray.size()];
 					for (int i = 0; i < modules.length; i++) {
 						modules[i] = modulesArray.get(i).getAsString();
 					}
+					ret.add(new ApiHashInfo(hash, apiName, permutation, modules));
+				} else {
+					ret.add(new NonApiHashInfo(hash, stringInfo.get("string").getAsString()));
 				}
-				ret.add(new HashInfo(hashObject.get("hash").getAsLong(), apiName, permutation, modules, isApi));
 			}
 			return ret;
 		}
@@ -197,7 +224,8 @@ public class HashDB extends GhidraScript {
 					httpQuery("GET", String.format("hash/%s/%d", algorithm, hash)));
 			ArrayList<HashInfo> filtered = new ArrayList<HashInfo>();
 			for (HashInfo hashInfo : ret) {
-				if (permutation != null && hashInfo.permutation.compareTo(permutation) != 0)
+				if (permutation != null && hashInfo.permutation != null
+						&& hashInfo.permutation.compareTo(permutation) != 0)
 					continue;
 				if (hashInfo.hash != hash) {
 					throw new Exception("hash mismatch");
@@ -1298,9 +1326,9 @@ public class HashDB extends GhidraScript {
 			}
 
 			HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
-			tableEntry.resolution = inputHashInfo.apiName;
+			tableEntry.resolution = inputHashInfo.getResolutionName();
 
-			if (inputHashInfo.modules.length == 0) {
+			if (inputHashInfo.modules != null && inputHashInfo.modules.length == 0) {
 				resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
 				tm.incrementProgress(1);
 				continue;
