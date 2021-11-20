@@ -129,8 +129,15 @@ public class HashDB extends GhidraScript {
 		}
 
 		public class ApiHashInfo extends HashInfo {
+			public String apiName;
+			public String permutation;
+			public String modules[];
+
 			public ApiHashInfo(long hash, String apiName, String permutation, String[] modules) {
-				super(hash, apiName, permutation, modules, null, true);
+				super(hash, true);
+				this.apiName = apiName;
+				this.permutation = permutation;
+				this.modules = modules;
 			}
 
 			@Override
@@ -140,8 +147,11 @@ public class HashDB extends GhidraScript {
 		}
 
 		public class NonApiHashInfo extends HashInfo {
+			public String freeText;
+
 			public NonApiHashInfo(long hash, String freeText) {
-				super(hash, null, null, null, freeText, false);
+				super(hash, false);
+				this.freeText = freeText;
 			}
 
 			@Override
@@ -152,19 +162,10 @@ public class HashDB extends GhidraScript {
 
 		public abstract class HashInfo {
 			public long hash;
-			public String apiName;
-			public String permutation;
-			public String modules[];
-			public String freeText;
 			public boolean isApi;
 
-			public HashInfo(long hash, String apiName, String permutation, String modules[], String freeText,
-					boolean isApi) {
+			public HashInfo(long hash, boolean isApi) {
 				this.hash = hash;
-				this.apiName = apiName;
-				this.permutation = permutation;
-				this.modules = modules;
-				this.freeText = freeText;
 				this.isApi = isApi;
 			}
 
@@ -224,8 +225,8 @@ public class HashDB extends GhidraScript {
 					httpQuery("GET", String.format("hash/%s/%d", algorithm, hash)));
 			ArrayList<HashInfo> filtered = new ArrayList<HashInfo>();
 			for (HashInfo hashInfo : ret) {
-				if (permutation != null && hashInfo.permutation != null
-						&& hashInfo.permutation.compareTo(permutation) != 0)
+				if (permutation != null && ApiHashInfo.class.isInstance(hashInfo)
+						&& ((ApiHashInfo) hashInfo).permutation.compareTo(permutation) != 0)
 					continue;
 				if (hashInfo.hash != hash) {
 					throw new Exception("hash mismatch");
@@ -1099,7 +1100,7 @@ public class HashDB extends GhidraScript {
 
 		public String getApiName() {
 			try {
-				return hashInfos.iterator().next().apiName;
+				return hashInfos.iterator().next().getResolutionName();
 			} catch (Exception e) {
 				return null;
 			}
@@ -1135,7 +1136,7 @@ public class HashDB extends GhidraScript {
 
 		public String getApiName(long hashAfterTransform) {
 			try {
-				return store.get(hashAfterTransform).getSingleHashInfo().apiName;
+				return store.get(hashAfterTransform).getSingleHashInfo().getResolutionName();
 			} catch (Exception e) {
 				return null;
 			}
@@ -1157,7 +1158,8 @@ public class HashDB extends GhidraScript {
 					continue;
 				}
 				for (HashDBApi.HashInfo info : result.hashInfos) {
-					if (info.permutation.equals(match)) {
+					if (HashDB.HashDBApi.ApiHashInfo.class.isInstance(info)
+							&& ((HashDB.HashDBApi.ApiHashInfo) info).permutation.equals(match)) {
 						collected = info;
 					}
 				}
@@ -1182,10 +1184,13 @@ public class HashDB extends GhidraScript {
 				}
 				apiResultCount += 1;
 				for (HashDBApi.HashInfo hashInfo : result.hashInfos) {
-					Long oldCount = permutationCounts.get(hashInfo.permutation);
-					if (oldCount == null)
-						oldCount = 0L;
-					permutationCounts.put(hashInfo.permutation, oldCount + 1L);
+					if (HashDB.HashDBApi.ApiHashInfo.class.isInstance(hashInfo)) {
+						HashDB.HashDBApi.ApiHashInfo apiHashInfo = (HashDB.HashDBApi.ApiHashInfo) hashInfo;
+						Long oldCount = permutationCounts.get(apiHashInfo.permutation);
+						if (oldCount == null)
+							oldCount = 0L;
+						permutationCounts.put(apiHashInfo.permutation, oldCount + 1L);
+					}
 				}
 			}
 			for (String key : permutationCounts.keySet()) {
@@ -1300,12 +1305,15 @@ public class HashDB extends GhidraScript {
 				tm.incrementProgress(1);
 				continue;
 			}
-			ArrayList<HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k], permutation);
 
+			ArrayList<HashDBApi.HashInfo> resolved = api.resolve(algorithm, hashesAfterTransform[k], permutation);
 			for (HashDBApi.HashInfo hi : resolved) {
-				if (hi.isApi && !observedPermuations.contains(hi.permutation)) {
-					observedPermuations.add(hi.permutation);
-					dialog.addNewPermutation(hi.permutation, true);
+				if (HashDB.HashDBApi.ApiHashInfo.class.isInstance(hi)) {
+					HashDB.HashDBApi.ApiHashInfo ahi = (HashDB.HashDBApi.ApiHashInfo) hi;
+					if (!observedPermuations.contains(ahi.permutation)) {
+						observedPermuations.add(ahi.permutation);
+						dialog.addNewPermutation(ahi.permutation, true);
+					}
 				}
 			}
 
@@ -1327,23 +1335,26 @@ public class HashDB extends GhidraScript {
 
 			HashDBApi.HashInfo inputHashInfo = resolved.iterator().next();
 			tableEntry.resolution = inputHashInfo.getResolutionName();
-
-			if (inputHashInfo.modules != null && inputHashInfo.modules.length == 0) {
-				resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
-				tm.incrementProgress(1);
-				continue;
-			}
-
-			if (dialog.resolveEntireModules()) {
-				for (String module : inputHashInfo.modules) {
-					if (permutation != null && inputHashInfo.permutation.compareTo(permutation) != 0)
-						continue;
-					for (HashDBApi.HashInfo hashInfo : api.module(module, algorithm, inputHashInfo.permutation)) {
-						resultStore.addResolution(invertHashTransformation(hashInfo.hash), hashInfo.hash, hashInfo);
-					}
+			if (HashDB.HashDBApi.ApiHashInfo.class.isInstance(inputHashInfo)) {
+				HashDB.HashDBApi.ApiHashInfo apiInputHashInfo = (HashDB.HashDBApi.ApiHashInfo) inputHashInfo;
+				if (apiInputHashInfo.modules != null && apiInputHashInfo.modules.length == 0) {
+					resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
+					tm.incrementProgress(1);
+					continue;
 				}
-			} else {
-				resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
+
+				if (dialog.resolveEntireModules()) {
+					for (String module : apiInputHashInfo.modules) {
+						if (permutation != null && apiInputHashInfo.permutation.compareTo(permutation) != 0)
+							continue;
+						for (HashDBApi.HashInfo hashInfo : api.module(module, algorithm,
+								apiInputHashInfo.permutation)) {
+							resultStore.addResolution(invertHashTransformation(hashInfo.hash), hashInfo.hash, hashInfo);
+						}
+					}
+				} else {
+					resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
+				}
 			}
 			tm.incrementProgress(1);
 		}
@@ -1360,7 +1371,7 @@ public class HashDB extends GhidraScript {
 				HashResolutionResult result = resultStore.get(hashesAfterTransform[k]);
 				if (result.isResolved()) {
 					HashLocation tableEntry = hashLocations.get(k);
-					tableEntry.resolution = result.getSingleHashInfo().apiName;
+					tableEntry.resolution = result.getSingleHashInfo().getResolutionName();
 				}
 			}
 			dialog.addNewPermutation(match, true);
