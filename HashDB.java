@@ -812,7 +812,6 @@ public class HashDB extends GhidraScript {
 							protected Void doInBackground() throws Exception {
 								try {
 									for (Address callAddr : calls) {
-										logDebugMessage(String.format("Scanning call at 0x%x", callAddr.getOffset()));
 										try {
 											OptionalLong hash = getConstantCallArgument(callAddr,
 													(Integer) crawlParameterIndex.getValue());
@@ -821,8 +820,11 @@ public class HashDB extends GhidraScript {
 														callAddr.getOffset()));
 											} else {
 												addHash(callAddr, hash.getAsLong());
-												logDebugMessage(String.format("Found hash 0x%x passed to call at 0x%x",
-														hash.getAsLong(), callAddr.getOffset()));
+												if (GUI_DEBUGGING) {
+													logDebugMessage(
+															String.format("Found hash 0x%x passed to call at 0x%x",
+																	hash.getAsLong(), callAddr.getOffset()));
+												}
 											}
 										} catch (Exception e) {
 											logDebugMessage(String.format(
