@@ -1171,10 +1171,6 @@ public class HashDB extends GhidraScript {
 			return resolvedResults().size();
 		}
 
-		public long nonApiResolvedCount() {
-			return nonApiResolutions().size();
-		}
-
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : allResults()) {
@@ -1385,16 +1381,21 @@ public class HashDB extends GhidraScript {
 		DataTypeFactory dataTypeFactory = new DataTypeFactory(dialog.getOutputMethod());
 		String hashStorageName = dialog.getStorageName();
 		String nonApiEnumName = dialog.getNonApiEnumName();
-		String remark = "";
-		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
-			remark = " Select a permutation to resolve remaining hashes.";
+		StringBuilder sb = new StringBuilder();
+		ArrayList<HashResolutionResult> nonApiResolutions = resultStore.nonApiResolutions();
+		if (nonApiResolutions.size() > 0) {
+			dataTypeFactory.commitDataType(dataTypeFactory.commitResultsToEnum(nonApiResolutions, nonApiEnumName));
+			sb.append(String.format("Added %d values to data type '%s'. ", nonApiResolutions.size(), nonApiEnumName));
 		}
-		dataTypeFactory
-				.commitDataType(dataTypeFactory.commitResultsToEnum(resultStore.nonApiResolutions(), nonApiEnumName));
-		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
-		return String.format("Added %d values to data type '%s' and %d values to enum type '%s'.%s",
-				resultStore.resolvedCount(), hashStorageName, resultStore.nonApiResolvedCount(), nonApiEnumName, remark)
-				.trim();
+		if (resultStore.resolvedCount() > 0) {
+			dataTypeFactory.commitApiResults(hashStorageName, resultStore);
+			sb.append(
+					String.format("Added %d values to data type '%s'. ", resultStore.resolvedCount(), hashStorageName));
+		}
+		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
+			sb.append("Select a permutation to resolve remaining hashes. ");
+		}
+		return sb.toString().trim();
 	}
 
 	private long transformHash(long hash) throws ScriptException {
