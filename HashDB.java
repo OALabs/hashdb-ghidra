@@ -60,6 +60,7 @@ import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.SourceArchive;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Data;
+import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
@@ -84,8 +85,10 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 
@@ -320,6 +323,9 @@ public class HashDB extends GhidraScript {
 		private JComboBox<String> permutationField;
 		private JTextField hashAlgorithmThresholdField;
 		private GCheckBox resolveModulesCheckbox;
+		private JTextField crawlFunctionName;
+		private JSpinner crawlParameterIndex;
+		private SpinnerNumberModel crawlParameterIndexModel;
 
 		private GCheckBox transformationIsSelfInverseCheckbox;
 		private GCheckBox transformationIsNotInvertibleCheckbox;
@@ -608,7 +614,7 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		protected JComponent addQuerySettingsPanel() {
+		private JComponent addQuerySettingsPanel() {
 			TwoColumnPanel tc = new TwoColumnPanel(7);
 
 			transformationTextField = new JComboBox<>();
@@ -668,7 +674,7 @@ public class HashDB extends GhidraScript {
 			return tc.getMain();
 		}
 
-		protected JComponent addOutputSettingsPanel() {
+		private JComponent addOutputSettingsPanel() {
 			int rowCount = 4;
 			TwoColumnPanel tc = new TwoColumnPanel(rowCount);
 			JPanel radioPanel = new JPanel(new BorderLayout(10, 0));
@@ -696,7 +702,7 @@ public class HashDB extends GhidraScript {
 			return tc.getMain();
 		}
 
-		protected JComponent addEditTablePanel() {
+		private JComponent addEditTablePanel() {
 			JTextField manualHash = new JTextField();
 			JButton addHashButton = new JButton("Add Hash");
 			addHashButton.addActionListener(new ActionListener() {
@@ -760,12 +766,29 @@ public class HashDB extends GhidraScript {
 			return main;
 		}
 
-		protected JComponent addScanFunctionPanel() {
-			return new JPanel(new BorderLayout());
+		@SuppressWarnings("unchecked")
+		public void setCrawlFunctionParameterCount(Number count) {
+			crawlParameterIndexModel.setMaximum((Comparable<Double>) count);
+			crawlParameterIndexModel.setValue(count); // default select last parameter
 		}
 
+		private JComponent addScanFunctionPanel() {
+			TwoColumnPanel tc = new TwoColumnPanel(2);
+
+			crawlFunctionName = new JTextField("");
+			tc.addRow("Function Name:", crawlFunctionName);
+
+			crawlParameterIndexModel = new SpinnerNumberModel(1, 1, 3, 1);
+			crawlParameterIndex = new JSpinner(crawlParameterIndexModel);
+			tc.addRow("Parameter (1 based):", crawlParameterIndex);
+
+			return tc.getMain();
+		}
+
+		JTabbedPane McPane;
+
 		protected void addWorkPanel(JComponent hauptPanele) {
-			JTabbedPane McPane = new JTabbedPane(); // McPane defies common camelCaseConventions
+			McPane = new JTabbedPane(); // McPane defies common camelCaseConventions
 			super.addWorkPanel(hauptPanele);
 			McPane.addTab("Query Settings", addQuerySettingsPanel());
 			McPane.addTab("Output Settings", addOutputSettingsPanel());
@@ -773,6 +796,16 @@ public class HashDB extends GhidraScript {
 			McPane.addTab("Scan Function", addScanFunctionPanel());
 			hauptPanele.add(McPane, BorderLayout.SOUTH);
 			enableComponentsAccordingToState(getCurrentState());
+		}
+
+		public void openQuerySettingsTab() {
+			McPane.setSelectedIndex(0);
+		}
+
+		public void openScanFunctionTab(Function function) {
+			crawlFunctionName.setText(function.getName());
+			setCrawlFunctionParameterCount(function.getParameterCount());
+			McPane.setSelectedIndex(3);
 		}
 
 		public void setTransformationNotInvertible() {
@@ -893,11 +926,20 @@ public class HashDB extends GhidraScript {
 			try {
 				getHashesAtCurrentLocation(hashes);
 			} catch (Exception e) {
-				logDebugMessage("Error looking for hash values to add:", e);
+				Function selectedFunction = getFunctionBefore(currentAddress.next());
+				if (selectedFunction == null) {
+					logDebugMessage("Error looking for hash values to add:", e);
+				} else {
+					logDebugMessage(
+							String.format("No valid hash selected, interpreting selection as function to crawl: %s",
+									selectedFunction.getName()));
+					dialog.openScanFunctionTab(selectedFunction);
+				}
 				return;
 			}
 		}
 		if (hashes.size() > 0) {
+			dialog.openQuerySettingsTab();
 			addHashes(hashes);
 		}
 	}
@@ -1389,8 +1431,8 @@ public class HashDB extends GhidraScript {
 		}
 		if (resultStore.resolvedCount() > 0) {
 			dataTypeFactory.commitApiResults(hashStorageName, resultStore);
-			sb.append(
-					String.format("Added %d values to data type \"%s\". ", resultStore.resolvedCount(), hashStorageName));
+			sb.append(String.format("Added %d values to data type \"%s\". ", resultStore.resolvedCount(),
+					hashStorageName));
 		}
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			sb.append("Select a permutation to resolve remaining hashes. ");
