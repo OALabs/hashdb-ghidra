@@ -932,7 +932,7 @@ public class HashDB extends GhidraScript {
 						return copy;
 					}
 				}
-				logDebugMessage(String.format("A type named '%s' already exists; it will be overwritten.", name));
+				logDebugMessage(String.format("A type named \"%s\" already exists; it will be overwritten.", name));
 			}
 			return makeNew(name);
 		}
@@ -968,7 +968,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		public void commitDataType(DataType dst) {
-			int id = currentProgram.startTransaction(String.format("updating data type '%s'", dst.getDisplayName()));
+			int id = currentProgram.startTransaction(String.format("updating data type \"%s\"", dst.getDisplayName()));
 			try {
 				putOutputType(dst);
 			} finally {
@@ -1355,7 +1355,7 @@ public class HashDB extends GhidraScript {
 				}
 			}
 			dialog.addNewPermutation(match, true);
-			logDebugMessage(String.format("The permutation '%s' was auto-selected because it matched all.", match));
+			logDebugMessage(String.format("The permutation \"%s\" was auto-selected because it matched all.", match));
 		} else {
 			logDebugMessage("Permutations could not be disambiguated, please select one manually.");
 		}
@@ -1373,7 +1373,7 @@ public class HashDB extends GhidraScript {
 		if (resultStore.hasCollisions()) {
 			handleCollisions(tm, hashLocations, hashesAfterTransform, resultStore);
 		}
-		tm.setMessage(String.format("updating data type %s", dialog.getStorageName()));
+		tm.setMessage(String.format("updating data type \"%s\"", dialog.getStorageName()));
 		return processResult(resultStore);
 	}
 
@@ -1385,12 +1385,12 @@ public class HashDB extends GhidraScript {
 		ArrayList<HashResolutionResult> nonApiResolutions = resultStore.nonApiResolutions();
 		if (nonApiResolutions.size() > 0) {
 			dataTypeFactory.commitDataType(dataTypeFactory.commitResultsToEnum(nonApiResolutions, nonApiEnumName));
-			sb.append(String.format("Added %d values to data type '%s'. ", nonApiResolutions.size(), nonApiEnumName));
+			sb.append(String.format("Added %d values to data type \"%s\". ", nonApiResolutions.size(), nonApiEnumName));
 		}
 		if (resultStore.resolvedCount() > 0) {
 			dataTypeFactory.commitApiResults(hashStorageName, resultStore);
 			sb.append(
-					String.format("Added %d values to data type '%s'. ", resultStore.resolvedCount(), hashStorageName));
+					String.format("Added %d values to data type \"%s\". ", resultStore.resolvedCount(), hashStorageName));
 		}
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			sb.append("Select a permutation to resolve remaining hashes. ");
@@ -1530,7 +1530,9 @@ public class HashDB extends GhidraScript {
 		} catch (NotFoundException e) {
 			if (currentLocation instanceof DecompilerLocation) {
 				Varnode varNode = ((DecompilerLocation) currentLocation).getToken().getVarnode();
-				if (varNode == null || !varNode.isConstant())
+				if (varNode == null)
+					throw new Exception("You have to select something.");
+				if (!varNode.isConstant())
 					throw new Exception("You have to select a constant.");
 				hashes.put(varNode.getOffset(), varNode.getPCAddress());
 			} else if (currentLocation instanceof OperandFieldLocation) {
