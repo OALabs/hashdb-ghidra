@@ -15,13 +15,18 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.OptionalLong;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.decompiler.DecompileResults;
 import ghidra.app.decompiler.DecompilerLocation;
 import ghidra.app.plugin.core.analysis.AutoAnalysisManager;
 import ghidra.app.script.GhidraScript;
@@ -33,6 +38,7 @@ import ghidra.app.tablechooser.TableChooserExecutor;
 
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.util.OperandFieldLocation;
+import ghidra.util.exception.CancelledException;
 import ghidra.util.exception.NotFoundException;
 import ghidra.util.task.TaskMonitor;
 
@@ -64,8 +70,13 @@ import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.MemoryAccessException;
+import ghidra.program.model.pcode.HighFunction;
+import ghidra.program.model.pcode.PcodeOp;
+import ghidra.program.model.pcode.PcodeOpAST;
 import ghidra.program.model.pcode.Varnode;
 import ghidra.program.model.scalar.Scalar;
+import ghidra.program.model.symbol.RefType;
+import ghidra.program.model.symbol.Reference;
 
 import java.net.URL;
 import java.security.SecureRandom;
@@ -773,7 +784,7 @@ public class HashDB extends GhidraScript {
 		}
 
 		private JComponent addScanFunctionPanel() {
-			TwoColumnPanel tc = new TwoColumnPanel(2);
+			TwoColumnPanel tc = new TwoColumnPanel(3);
 
 			crawlFunctionName = new JTextField("");
 			tc.addRow("Function Name:", crawlFunctionName);
@@ -781,6 +792,70 @@ public class HashDB extends GhidraScript {
 			crawlParameterIndexModel = new SpinnerNumberModel(1, 1, 3, 1);
 			crawlParameterIndex = new JSpinner(crawlParameterIndexModel);
 			tc.addRow("Parameter (1 based):", crawlParameterIndex);
+
+			JButton scanButton = new JButton("Scan!");
+			scanButton.addActionListener(new ActionListener() {
+				@Override
+				public void actionPerformed(ActionEvent event) {
+					List<Function> functions = getGlobalFunctions(crawlFunctionName.getText());
+					if (functions.size() == 0) {
+						logDebugMessage("No function with this name found");
+					} else if (functions.size() > 1) {
+						logDebugMessage("Multiple functions with this name found");
+					} else {
+						TaskMonitor taskMonitor = getTaskMonitorComponent();
+						showProgressBar("Scanning functions", true, true, 0);
+						List<Address> calls = getCallAddresses(functions.get(0));
+						taskMonitor.initialize(calls.size());
+						final class Resolver extends SwingWorker<Void, Object> {
+							@Override
+							protected Void doInBackground() throws Exception {
+								try {
+									for (Address callAddr : calls) {
+										logDebugMessage(String.format("Scanning call at 0x%x", callAddr.getOffset()));
+										try {
+											OptionalLong hash = getConstantCallArgument(callAddr,
+													(Integer) crawlParameterIndex.getValue());
+											if (hash.isEmpty()) {
+												logDebugMessage(String.format("Cannot extract value for call at 0x%x",
+														callAddr.getOffset()));
+											} else {
+												addHash(callAddr, hash.getAsLong());
+												logDebugMessage(String.format("Found hash 0x%x passed to call at 0x%x",
+														hash.getAsLong(), callAddr.getOffset()));
+											}
+										} catch (Exception e) {
+											logDebugMessage(String.format(
+													"Error while extracting parameter value from call at 0x%x",
+													callAddr.getOffset()), e);
+										}
+										taskMonitor.incrementProgress(1);
+										taskMonitor.checkCanceled();
+									}
+								} catch (CancelledException e) {
+									logDebugMessage("Operation canceled");
+								}
+								return null;
+							}
+
+							@Override
+							protected void done() {
+								setStatusText(String.format("Scanned %d of %d function calls.",
+										taskMonitor.getProgress(), calls.size()));
+								hideTaskMonitorComponent();
+								try {
+									get();
+								} catch (InterruptedException | ExecutionException e) {
+									logDebugMessage("Unknown error during scanning", e);
+								}
+							}
+						}
+						Resolver resolver = new Resolver();
+						resolver.execute();
+					}
+				}
+			});
+			tc.addRow(scanButton);
 
 			return tc.getMain();
 		}
@@ -1595,5 +1670,70 @@ public class HashDB extends GhidraScript {
 						currentLocation.getClass().getSimpleName()));
 			}
 		}
+	}
+
+	class UnknownVariableCopy extends Exception {
+		public UnknownVariableCopy(PcodeOp unknownCode, Address addr) {
+			super(String.format("unknown opcode %s for variable copy at %08X", unknownCode.getMnemonic(),
+					addr.getOffset()));
+		}
+	}
+
+	private OptionalLong getConstantCallArgument(Address addr, int argumentIndex)
+			throws IllegalStateException, UnknownVariableCopy {
+		Function caller = getFunctionBefore(addr);
+		if (caller == null)
+			throw new IllegalStateException();
+		DecompInterface decompInterface = new DecompInterface();
+		decompInterface.openProgram(currentProgram);
+		DecompileResults decompileResults = decompInterface.decompileFunction(caller, 120, monitor);
+		if (!decompileResults.decompileCompleted())
+			throw new IllegalStateException();
+		HighFunction highFunction = decompileResults.getHighFunction();
+		Iterator<PcodeOpAST> pCodes = highFunction.getPcodeOps(addr);
+		while (pCodes.hasNext()) {
+			PcodeOpAST instruction = pCodes.next();
+			if (instruction.getOpcode() == PcodeOp.CALL) {
+				return traceVarnodeValue(instruction.getInput(argumentIndex));
+			}
+		}
+		return OptionalLong.empty();
+	}
+
+	private OptionalLong traceVarnodeValue(Varnode argument) throws UnknownVariableCopy {
+		while (!argument.isConstant()) {
+			PcodeOp ins = argument.getDef();
+			if (ins == null)
+				break;
+			switch (ins.getOpcode()) {
+			case PcodeOp.CAST:
+			case PcodeOp.COPY:
+				argument = ins.getInput(0);
+				break;
+			case PcodeOp.PTRSUB:
+			case PcodeOp.PTRADD:
+				argument = ins.getInput(1);
+				break;
+			case PcodeOp.INT_MULT:
+			case PcodeOp.MULTIEQUAL:
+				// known cases where an array is indexed
+				return OptionalLong.empty();
+			default:
+				// don't know how to handle this yet.
+				throw new UnknownVariableCopy(ins, argument.getAddress());
+			}
+		}
+		return OptionalLong.of(argument.getOffset());
+	}
+
+	private List<Address> getCallAddresses(Function deobfuscator) {
+		List<Address> addresses = new ArrayList<Address>();
+		for (Reference ref : getReferencesTo(deobfuscator.getEntryPoint())) {
+			if (ref.getReferenceType() != RefType.UNCONDITIONAL_CALL)
+				continue;
+			addresses.add(ref.getFromAddress());
+		}
+
+		return addresses;
 	}
 }
