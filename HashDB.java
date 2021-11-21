@@ -941,25 +941,6 @@ public class HashDB extends GhidraScript {
 			dataTypeManager.addDataType(hashStorage, DataTypeConflictHandler.REPLACE_HANDLER);
 		}
 
-		private DataType commitApiResultsToEnum(HashResolutionResultStore store, String name) {
-			DataType hashStorage = getOutputType(name);
-			EnumDataType dst = (EnumDataType) hashStorage;
-			for (HashResolutionResult result : store.resolvedResults()) {
-				String apiName = result.getApiName();
-				try {
-					long oldValue = dst.getValue(apiName);
-					if (oldValue != result.hashBeforeTransformation) {
-						logDebugMessage(String.format(
-								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.", name,
-								apiName, oldValue, result.hashBeforeTransformation));
-					}
-				} catch (NoSuchElementException e) {
-					dst.add(result.getApiName(), result.hashBeforeTransformation);
-				}
-			}
-			return dst;
-		}
-
 		private DataType commitApiResultsToStruct(HashResolutionResultStore store, String name) {
 			StructureDataType dst = (StructureDataType) getOutputType(name);
 			for (HashResolutionResult result : store.allResults()) {
@@ -986,17 +967,8 @@ public class HashDB extends GhidraScript {
 			return dst;
 		}
 
-		public void commitApiResults(String name, HashResolutionResultStore store) {
-			DataType dst = null;
-			switch (strategy) {
-			case Enum:
-				dst = commitApiResultsToEnum(store, name);
-				break;
-			case Struct:
-				dst = commitApiResultsToStruct(store, name);
-				break;
-			}
-			int id = currentProgram.startTransaction(String.format("updating data type '%s'", name));
+		public void commitDataType(DataType dst) {
+			int id = currentProgram.startTransaction(String.format("updating data type '%s'", dst.getDisplayName()));
 			try {
 				putOutputType(dst);
 			} finally {
@@ -1004,10 +976,23 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		public DataType commitNonApiResults(String name, HashResolutionResultStore store) {
+		public void commitApiResults(String name, HashResolutionResultStore store) {
+			DataType dst = null;
+			switch (strategy) {
+			case Enum:
+				dst = commitResultsToEnum(store.resolvedResults(), name);
+				break;
+			case Struct:
+				dst = commitApiResultsToStruct(store, name);
+				break;
+			}
+			commitDataType(dst);
+		}
+
+		public DataType commitResultsToEnum(ArrayList<HashResolutionResult> results, String name) {
 			DataType hashStorage = getOutputType(name);
 			EnumDataType dst = (EnumDataType) hashStorage;
-			for (HashResolutionResult result : store.nonApiResolutions()) {
+			for (HashResolutionResult result : results) {
 				String apiName = result.getApiName();
 				try {
 					long oldValue = dst.getValue(apiName);
@@ -1352,7 +1337,7 @@ public class HashDB extends GhidraScript {
 					resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
 				}
 			} else if (HashDB.HashDBApi.NonApiHashInfo.class.isInstance(inputHashInfo)) {
-				HashDB.HashDBApi.NonApiHashInfo nonApiInputHashInfo = (HashDB.HashDBApi.NonApiHashInfo)inputHashInfo;
+				HashDB.HashDBApi.NonApiHashInfo nonApiInputHashInfo = (HashDB.HashDBApi.NonApiHashInfo) inputHashInfo;
 				resultStore.addResolution(nonApiInputHashInfo.hash, hashesAfterTransform[k], inputHashInfo);
 			}
 			tm.incrementProgress(1);
@@ -1404,7 +1389,8 @@ public class HashDB extends GhidraScript {
 		if (resultStore.hasCollisions() && dialog.getCurrentPermutation() == null) {
 			remark = " Select a permutation to resolve remaining hashes.";
 		}
-		dataTypeFactory.commitNonApiResults(nonApiEnumName, resultStore);
+		dataTypeFactory
+				.commitDataType(dataTypeFactory.commitResultsToEnum(resultStore.nonApiResolutions(), nonApiEnumName));
 		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
 		return String.format("Added %d values to data type '%s' and %d values to enum type '%s'.%s",
 				resultStore.resolvedCount(), hashStorageName, resultStore.nonApiResolvedCount(), nonApiEnumName, remark)
