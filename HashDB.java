@@ -1351,6 +1351,9 @@ public class HashDB extends GhidraScript {
 				} else {
 					resultStore.addResolution(tableEntry.hashValue, hashesAfterTransform[k], inputHashInfo);
 				}
+			} else if (HashDB.HashDBApi.NonApiHashInfo.class.isInstance(inputHashInfo)) {
+				HashDB.HashDBApi.NonApiHashInfo nonApiInputHashInfo = (HashDB.HashDBApi.NonApiHashInfo)inputHashInfo;
+				resultStore.addResolution(nonApiInputHashInfo.hash, hashesAfterTransform[k], inputHashInfo);
 			}
 			tm.incrementProgress(1);
 		}
