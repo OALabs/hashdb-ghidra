@@ -1004,8 +1004,23 @@ public class HashDB extends GhidraScript {
 			}
 		}
 
-		public void commitNonApiResults(String name, HashResolutionResultStore store) {
-			// TODO
+		public DataType commitNonApiResults(String name, HashResolutionResultStore store) {
+			DataType hashStorage = getOutputType(name);
+			EnumDataType dst = (EnumDataType) hashStorage;
+			for (HashResolutionResult result : store.nonApiResolutions()) {
+				String apiName = result.getApiName();
+				try {
+					long oldValue = dst.getValue(apiName);
+					if (oldValue != result.hashBeforeTransformation) {
+						logDebugMessage(String.format(
+								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.", name,
+								apiName, oldValue, result.hashBeforeTransformation));
+					}
+				} catch (NoSuchElementException e) {
+					dst.add(result.getApiName(), result.hashBeforeTransformation);
+				}
+			}
+			return dst;
 		}
 	}
 
@@ -1171,10 +1186,24 @@ public class HashDB extends GhidraScript {
 			return resolvedResults().size();
 		}
 
+		public long nonApiResolvedCount() {
+			return nonApiResolutions().size();
+		}
+
 		public ArrayList<HashResolutionResult> resolvedResults() {
 			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
 			for (HashResolutionResult result : allResults()) {
 				if (result.isResolved()) {
+					ret.add(result);
+				}
+			}
+			return ret;
+		}
+
+		public ArrayList<HashResolutionResult> nonApiResolutions() {
+			ArrayList<HashResolutionResult> ret = new ArrayList<HashResolutionResult>();
+			for (HashResolutionResult result : allResults()) {
+				if (!result.isApiResult()) {
 					ret.add(result);
 				}
 			}
@@ -1374,8 +1403,8 @@ public class HashDB extends GhidraScript {
 		}
 		dataTypeFactory.commitNonApiResults(nonApiEnumName, resultStore);
 		dataTypeFactory.commitApiResults(hashStorageName, resultStore);
-		return String
-				.format("Added %d values to data type '%s'.%s", resultStore.resolvedCount(), hashStorageName, remark)
+		return String.format("Added %d values to data type '%s' and %d values to enum type '%s'.%s",
+				resultStore.resolvedCount(), hashStorageName, resultStore.nonApiResolvedCount(), nonApiEnumName, remark)
 				.trim();
 	}
 
