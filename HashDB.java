@@ -134,7 +134,7 @@ public class HashDB extends GhidraScript {
 			public String modules[];
 
 			public ApiHashInfo(long hash, String apiName, String permutation, String[] modules) {
-				super(hash, true);
+				super(hash);
 				this.apiName = apiName;
 				this.permutation = permutation;
 				this.modules = modules;
@@ -150,7 +150,7 @@ public class HashDB extends GhidraScript {
 			public String freeText;
 
 			public NonApiHashInfo(long hash, String freeText) {
-				super(hash, false);
+				super(hash);
 				this.freeText = freeText;
 			}
 
@@ -162,11 +162,9 @@ public class HashDB extends GhidraScript {
 
 		public abstract class HashInfo {
 			public long hash;
-			public boolean isApi;
 
-			public HashInfo(long hash, boolean isApi) {
+			public HashInfo(long hash) {
 				this.hash = hash;
-				this.isApi = isApi;
 			}
 
 			public abstract String getResolutionName();
@@ -178,9 +176,8 @@ public class HashDB extends GhidraScript {
 			for (JsonElement hashEntry : response.get("hashes").getAsJsonArray()) {
 				JsonObject hashObject = hashEntry.getAsJsonObject();
 				JsonObject stringInfo = hashObject.get("string").getAsJsonObject();
-				boolean isApi = stringInfo.get("is_api").getAsBoolean();
 				long hash = hashObject.get("hash").getAsLong();
-				if (isApi) {
+				if (stringInfo.get("is_api").getAsBoolean()) {
 					/*-
 					 * Example Responses:
 					 * {"hashes": [{
@@ -1059,7 +1056,8 @@ public class HashDB extends GhidraScript {
 			case 0:
 				return HashResolutionResultType.NO_MATCHES_FOUND;
 			case 1:
-				return hashInfos.iterator().next().isApi ? HashResolutionResultType.RESOLVED
+				return HashDB.HashDBApi.ApiHashInfo.class.isInstance(hashInfos.iterator().next())
+						? HashResolutionResultType.RESOLVED
 						: HashResolutionResultType.NOT_AN_API_RESULT;
 			default:
 				return HashResolutionResultType.HASH_COLLISION;
