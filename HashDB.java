@@ -1112,15 +1112,21 @@ public class HashDB extends GhidraScript {
 			EnumDataType dst = (EnumDataType) hashStorage;
 			for (HashResolutionResult result : results) {
 				String apiName = result.getApiName();
-				try {
-					long oldValue = dst.getValue(apiName);
-					if (oldValue != result.hashBeforeTransformation) {
-						logDebugMessage(String.format(
-								"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.", name,
-								apiName, oldValue, result.hashBeforeTransformation));
+				if (apiName == null) {
+					if (GUI_DEBUGGING) {
+						logDebugMessage(String.format("skipping hash 0x%08X because resolved name is null", result.hashBeforeTransformation));
 					}
-				} catch (NoSuchElementException e) {
-					dst.add(result.getApiName(), result.hashBeforeTransformation);
+				} else {
+					try {
+						long oldValue = dst.getValue(apiName);
+						if (oldValue != result.hashBeforeTransformation) {
+							logDebugMessage(String.format(
+									"%s contains duplicate entry %s with value 0x%08X, new value 0x%08X ignored.", name,
+									apiName, oldValue, result.hashBeforeTransformation));
+						}
+					} catch (NoSuchElementException e) {
+						dst.add(result.getApiName(), result.hashBeforeTransformation);
+					}
 				}
 			}
 			return dst;
