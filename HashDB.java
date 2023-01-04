@@ -87,9 +87,6 @@ import java.awt.event.ActionEvent;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.ScriptException;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -103,10 +100,12 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 
+import org.python.util.PythonInterpreter;
+
 public class HashDB extends GhidraScript {
 	boolean HTTP_DEBUGGING = false;
 	boolean GUI_DEBUGGING = false;
-	boolean JS_DEBUGGING = false;
+	boolean PY_DEBUGGING = false;
 
 	static String getStackTraceAsString(Exception e) {
 		StringWriter sw = new StringWriter();
@@ -630,9 +629,9 @@ public class HashDB extends GhidraScript {
 
 			transformationTextField = new JComboBox<>();
 			transformationTextField.setEditable(true);
-			transformationTextField.addItem("X /* Unaltered Hash Value */");
-			transformationTextField.addItem("X ^ 0xBAADF00D /* XOR */");
-			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xAFB9) & 0x1FFFFF /*REvil*/");
+			transformationTextField.addItem("X  # Unaltered Hash Value");
+			transformationTextField.addItem("X ^ 0xBAADF00D  # XOR");
+			transformationTextField.addItem("((((X ^ 0x76C7) << 0x10) ^ X) ^ 0xAFB9) & 0x1FFFFF  # REvil");
 			transformationTextField.setSelectedIndex(0);
 			tc.addRow("Hash Transformation:", transformationTextField);
 
@@ -1517,23 +1516,23 @@ public class HashDB extends GhidraScript {
 		return sb.toString().trim();
 	}
 
-	private long transformHash(long hash) throws ScriptException {
+	private long transformHash(long hash) throws Exception {
 		return applyTransformation(hash, dialog.getTransformation());
 	}
 
-	private long invertHashTransformation(long hash) throws ScriptException {
+	private long invertHashTransformation(long hash) throws Exception {
 		return applyTransformation(hash, dialog.getTransformationInverse());
 	}
 
-	private long applyTransformation(long hash, String transformation) throws ScriptException {
-		ScriptEngineManager manager = new ScriptEngineManager();
-		ScriptEngine engine = manager.getEngineByName("JavaScript");
-		engine.put("X", hash);
-		long result = Long.valueOf(engine.eval(transformation).toString());
+	private long applyTransformation(long hash, String transformation) throws Exception {
+		PythonInterpreter interp = new PythonInterpreter();
+		interp.set("X", hash);
+		long result = interp.eval(transformation).asLong();
+		interp.close();
 		if (result < 0) {
 			result = 0xFFFFFFFFL - ~result;
 		}
-		if (JS_DEBUGGING) {
+		if (PY_DEBUGGING) {
 			println(String.format("%d became %d", hash, result));
 		}
 		return result;
